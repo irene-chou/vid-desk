@@ -31,7 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="vid-snatch",
         description="Download YouTube audio/video, optionally remove vocals.",
     )
-    parser.add_argument("url", type=validate_url, help="YouTube video URL")
+    parser.add_argument("url", nargs="?", type=validate_url, help="YouTube video URL")
+    parser.add_argument("--web", action="store_true", help="Start the web UI server")
+    parser.add_argument("--port", type=int, default=8080, help="Web UI port (default: 8080)")
     parser.add_argument(
         "-o", "--output", type=Path, default=DEFAULT_OUTPUT_DIR,
         help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})",
@@ -96,6 +98,13 @@ def run(args) -> None:
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.web:
+        from vid_snatch.webserver import run_web
+
+        return run_web(args.port)
+    if args.url is None:
+        parser.error("需要 YouTube 網址")
 
     if not check_dependencies():
         sys.exit(1)
