@@ -60,6 +60,7 @@ class JobQueue:
         self._subscribers: list[queue.Queue] = []
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
+        self._stopping = threading.Event()
 
     # ---- 公開 API ----
     def add(self, url: str, mode: str, filename: str | None = None, overwrite: bool = False) -> Job:
@@ -100,27 +101,30 @@ class JobQueue:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self._stopping.clear()
         self._thread = threading.Thread(target=self._worker, daemon=True, name="vid-snatch-worker")
         self._thread.start()
 
     def stop(self) -> None:
         if self._thread:
+            self._stopping.set()
             self._pending.put(_STOP)
             self._thread.join(timeout=5)
-            self._thread = None
+            if not self._thread.is_alive():
+                self._thread = None
 
     def exists(self, filename: str, mode: str) -> tuple[bool, str]:
         name = core.sanitize_filename(filename)
-        target = self.output_dir / _target_name(name, mode)
-        if not target.exists():
-            return False, name
-        return True, self._base_of(core.unique_path(target), mode)
+        base = self._unique_base(name, mode)
+        return base != name, base
 
     # ---- 內部 ----
-    @staticmethod
-    def _base_of(target: Path, mode: str) -> str:
-        stem = target.stem
-        return stem.removesuffix("_no_vocals") if mode == "no_vocals" else stem
+    def _unique_base(self, name: str, mode: str) -> str:
+        candidate, n = name, 0
+        while (self.output_dir / _target_name(candidate, mode)).exists():
+            n += 1
+            candidate = f"{name} ({n})"
+        return candidate
 
     def _emit(self, job: Job) -> None:
         with self._lock:
@@ -140,8 +144,10 @@ class JobQueue:
     def _worker(self) -> None:
         while True:
             job_id = self._pending.get()
-            if job_id is _STOP:
+            if self._stopping.is_set():
                 return
+            if job_id is _STOP:
+                continue
             job = self.get(job_id)
             if job is None:
                 continue
@@ -156,9 +162,7 @@ class JobQueue:
         self._update(job, state="running", step=1, step_name=MODES[job.mode][0], percent=None)
         name = core.sanitize_filename(job.filename if job.filename else b.fetch_title(job.url))
         if not job.overwrite:
-            target = self.output_dir / _target_name(name, job.mode)
-            if target.exists():
-                name = self._base_of(core.unique_path(target), job.mode)
+            name = self._unique_base(name, job.mode)
 
         try:
             path = self._download(job, name)
@@ -189,6 +193,6 @@ class JobQueue:
         wav = b.download_audio(job.url, self.output_dir, name, "wav", on_progress)
         try:
             self._set_step(job, 4)
-            return b.remove_vocals(wav, self.output_dir)
+            return b.remove_vocals(wav, self.output_dir, on_progress)
         finally:
             Path(wav).unlink(missing_ok=True)
