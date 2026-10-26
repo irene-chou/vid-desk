@@ -6,6 +6,7 @@
 <title>vid-snatch</title>
 <style>
   :root {
+    color-scheme: light dark;
     --bg: #f6f6f4;
     --surface: #ffffff;
     --text: #1d1d1f;
@@ -198,18 +199,29 @@ async function readError(res) {
   return "發生錯誤";
 }
 
+// fetch 本身失敗（伺服器關閉、斷線）時丟出的是英文 TypeError，統一改成中文
 async function getJson(path) {
-  const res = await fetch(path);
+  let res;
+  try {
+    res = await fetch(path);
+  } catch (e) {
+    throw new Error("發生錯誤");
+  }
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
 
 async function postJson(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Vid-Snatch": "1" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Vid-Snatch": "1" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error("發生錯誤");
+  }
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
@@ -354,7 +366,7 @@ async function startJobs() {
       filename: decision.filename || null,
       overwrite: decision.overwrite,
     });
-    (data.jobs || []).forEach(renderJob);
+    (data.jobs || []).forEach(renderIfNew);
     urlsEl.value = "";
     filenameEl.value = "";
     filenameTouched = false;
@@ -395,7 +407,7 @@ function buildCardBody(job, card) {
   icon.textContent = STATE_ICONS[job.state] || "";
   const name = document.createElement("span");
   name.className = "card-name";
-  name.textContent = job.filename || job.url;
+  name.textContent = job.filename || job.display_name || job.url;
   head.append(icon, name);
   parts.push(head);
 
@@ -447,13 +459,18 @@ function buildCardBody(job, card) {
     row.className = "row";
     row.append(makeButton("重試", async (event) => {
       event.currentTarget.disabled = true;
-      try { renderJob(await postJson(`/api/jobs/${job.id}/retry`)); }
+      try { renderIfNew(await postJson(`/api/jobs/${job.id}/retry`)); }
       catch (e) { cardActionError(card, e.message || "發生錯誤"); }
     }));
     parts.push(row);
   }
 
   return parts;
+}
+
+// POST 回應可能比 SSE 推來的狀態還舊；卡片已存在時以 SSE 為準
+function renderIfNew(job) {
+  if (!cards.has(job.id)) renderJob(job);
 }
 
 function renderJob(job) {
