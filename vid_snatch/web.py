@@ -33,6 +33,19 @@ class UninstallIn(BaseModel):
     delete_downloads: bool = False
 
 
+ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
+
+
+def _host_allowed(host: str | None) -> bool:
+    """只接受 localhost / 127.0.0.1（去掉埠號），擋 DNS rebinding。"""
+    if not host:
+        return False
+    name, sep, port = host.rpartition(":")
+    if not sep or not port.isdigit():
+        name = host
+    return name.lower() in ALLOWED_HOSTS
+
+
 def _error(status: int, message: str, **extra) -> JSONResponse:
     return JSONResponse({"message": message, **extra}, status_code=status)
 
@@ -50,6 +63,8 @@ def create_app(
 
     @app.middleware("http")
     async def require_header(request: Request, call_next):
+        if not _host_allowed(request.headers.get("host")):
+            return _error(403, "forbidden")
         if request.method == "POST" and request.headers.get("X-Vid-Snatch") != "1":
             return _error(403, "forbidden")
         return await call_next(request)

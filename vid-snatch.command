@@ -28,11 +28,6 @@ load_config() {
     fi
 }
 
-save_config() {
-    mkdir -p "$CONFIG_DIR"
-    echo "output_dir=$1" > "$CONFIG_FILE"
-}
-
 # ── Docker ──────────────────────────────────
 ensure_docker() {
     if ! command -v docker &> /dev/null; then
@@ -107,7 +102,7 @@ start_or_attach() {
     done
     PORT="$p"
     mkdir -p "$OUTPUT_DIR" "$CONFIG_DIR"
-    docker run -d --rm --name "$CONTAINER" -p "$PORT:8080" \
+    docker run -d --rm --name "$CONTAINER" -p "127.0.0.1:$PORT:8080" \
         -v "$OUTPUT_DIR:/app/output" \
         -v "$CONFIG_DIR:/app/config" \
         -e VS_HOST_OUTPUT_DIR="$OUTPUT_DIR" \

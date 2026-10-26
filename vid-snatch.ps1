@@ -169,7 +169,7 @@ function Start-Container {
         Write-Host "無法建立資料夾：$OutputDir"
         return $false
     }
-    docker run -d --rm --name $CONTAINER -p "${p}:8080" `
+    docker run -d --rm --name $CONTAINER -p "127.0.0.1:${p}:8080" `
         -v "${OutputDir}:/app/output" `
         -v "${ConfigDir}:/app/config" `
         -e "VS_HOST_OUTPUT_DIR=$OutputDir" `
@@ -303,16 +303,26 @@ function Invoke-Uninstall($deleteDownloads) {
     docker builder prune -f *> $null
     Write-Host '移除設定檔...'
     if (Test-Path -LiteralPath $ConfigDir) {
-        Remove-Item -LiteralPath $ConfigDir -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            [System.IO.Directory]::Delete($ConfigDir, $true)
+        } catch {
+            Write-Host "無法刪除設定資料夾，請自行刪除：$ConfigDir"
+        }
     }
     if ($deleteDownloads -eq $true) {
         $out = "$OutputDir".TrimEnd('\')
         $def = "$DefaultOutputDir".TrimEnd('\')
         if ($out -and ($out -ieq $def)) {
+            $deleted = $true
             if (Test-Path -LiteralPath $out) {
-                Remove-Item -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue
+                try {
+                    [System.IO.Directory]::Delete($out, $true)
+                } catch {
+                    $deleted = $false
+                    Write-Host "無法刪除下載資料夾，請自行刪除：$out"
+                }
             }
-            Write-Host '已刪除下載檔案。'
+            if ($deleted) { Write-Host '已刪除下載檔案。' }
         } else {
             Write-Host "下載資料夾不是預設位置，為了安全不會自動刪除，如需要請自行刪除：$OutputDir"
         }

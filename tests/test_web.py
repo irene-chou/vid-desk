@@ -14,7 +14,7 @@ def env(tmp_path):
     h = HostActionQueue(started_at=0.0)
     shutdown = []
     app = create_app(out, cfg, "/Users/me/Music/vid-snatch", q, h, on_shutdown=lambda: shutdown.append(1))
-    yield TestClient(app), q, h, cfg, shutdown
+    yield TestClient(app, base_url="http://localhost"), q, h, cfg, shutdown
     q.stop()
 
 def test_health(env):
@@ -84,3 +84,15 @@ def test_events_replays_existing_jobs(env):
             if line.startswith("data:"):
                 body = line; break
     assert '"state": "done"' in body or '"state":"done"' in body
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_foreign_host_is_403(env, method):
+    c, *_ = env
+    r = getattr(c, method)("/api/health", headers={**H, "Host": "evil.com"})
+    assert r.status_code == 403 and r.json() == {"message": "forbidden"}
+
+@pytest.mark.parametrize("host", ["localhost:8089", "127.0.0.1:8089", "localhost", "127.0.0.1"])
+def test_local_host_allowed(env, host):
+    c, *_ = env
+    assert c.get("/api/health", headers={"Host": host}).status_code == 200
