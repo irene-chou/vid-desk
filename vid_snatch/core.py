@@ -6,6 +6,7 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 DEFAULT_OUTPUT_DIR = Path("./output")
 DEMUCS_MODEL = "htdemucs"
@@ -14,16 +15,37 @@ UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 YOUTUBE_PATTERNS = [
     r"(https?://)?(www\.)?youtube\.com/watch\?",
     r"(https?://)?(www\.)?youtube\.com/shorts/",
+    r"(https?://)?(www\.)?youtube\.com/live/",
     r"(https?://)?youtu\.be/",
     r"(https?://)?music\.youtube\.com/watch\?",
 ]
 
 
+STRIPPED_QUERY_PARAMS = {"list", "index", "t", "si", "pp", "start_radio", "feature"}
+
+
+def clean_url(raw: str) -> str | None:
+    """Normalize a pasted YouTube video URL, or return None if it isn't one."""
+    url = raw.strip()
+    if not url:
+        return None
+    if not re.match(r"https?://", url):
+        url = "https://" + url
+    if not any(re.match(pattern, url) for pattern in YOUTUBE_PATTERNS):
+        return None
+    parts = urlsplit(url)
+    query = urlencode(
+        [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+         if k not in STRIPPED_QUERY_PARAMS]
+    )
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+
+
 def validate_url(url: str) -> str:
-    for pattern in YOUTUBE_PATTERNS:
-        if re.match(pattern, url):
-            return url
-    raise argparse.ArgumentTypeError(f"Not a valid YouTube URL: {url}")
+    cleaned = clean_url(url)
+    if cleaned is None:
+        raise argparse.ArgumentTypeError(f"Not a valid YouTube URL: {url}")
+    return cleaned
 
 
 def fetch_title(url: str) -> str:
