@@ -30,16 +30,13 @@ $ModelFile = Join-Path $TorchDir 'hub\checkpoints\955717e8-8726e21a.th'
 $StateDir = Join-Path $Root 'state'
 $CommitMarker = Join-Path $StateDir 'installed-commit'
 $LogDir = Join-Path $Root 'logs'
+$ServerLog = Join-Path $LogDir 'server.log'
+$ServerErrLog = Join-Path $LogDir 'server.err.log'
 $ServerFile = Join-Path $Root 'server.json'
 
-$IMAGE_REMOTE = 'ghcr.io/irene-chou/vid-snatch:latest'
-$IMAGE_LOCAL = 'vid-snatch'
-$CONTAINER = 'vid-snatch'
-$NameFilter = 'name=^' + $CONTAINER + '$'
 $DEFAULT_PORT = 8080
 $MAX_PORT = 8180
 $Port = $DEFAULT_PORT
-$ProjectDir = $PSScriptRoot
 $Pickers = New-Object System.Collections.ArrayList
 
 # ── 設定檔 ──────────────────────────────────
@@ -50,7 +47,7 @@ $OutputDir = $DefaultOutputDir
 
 function Get-CleanPath([string]$p) {
     $p = $p.Trim()
-    # 去掉結尾的 \ 或 /（保留 C:\ 這種磁碟根目錄），避免 docker 參數的引號被跳脫
+    # 去掉結尾的 \ 或 /（保留 C:\ 這種磁碟根目錄），路徑比對與顯示才一致
     while ($p.Length -gt 3 -and ($p.EndsWith('\') -or $p.EndsWith('/'))) {
         $p = $p.Substring(0, $p.Length - 1)
     }
@@ -234,31 +231,36 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     }
 }
 
-function Test-ContainerRunning {
-    $id = docker ps -q -f $NameFilter 2>$null
-    return [bool]("$id".Trim())
+# 回傳 @{ Id = 伺服器行程 pid; Port = 連接埠 }；沒有或讀不到 server.json 時回傳 $null
+function Read-ServerInfo {
+    if (-not (Test-Path -LiteralPath $ServerFile)) { return $null }
+    try {
+        $info = ConvertFrom-Json ([System.IO.File]::ReadAllText($ServerFile))
+        return @{ Id = [int]$info.pid; Port = [int]$info.port }
+    } catch {
+        return $null
+    }
 }
 
-function Read-Port {
-    $lines = @(docker port $CONTAINER 8080 2>$null)
-    if ($lines.Count -gt 0) {
-        $first = "$($lines[0])".Trim()
-        $p = $first.Substring($first.LastIndexOf(':') + 1)
-        $n = 0
-        if ([int]::TryParse($p, [ref]$n)) { return $n }
+# pid 的行程存在、且 /api/health 有回應才算在跑（避免 pid 被別的行程重用）
+function Test-ServerRunning {
+    $info = Read-ServerInfo
+    if (-not $info) { return $false }
+    if (-not (Get-Process -Id $info.Id -ErrorAction SilentlyContinue)) { return $false }
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$($info.Port)/api/health" -TimeoutSec 2 | Out-Null
+    } catch {
+        return $false
     }
-    return $DEFAULT_PORT
+    $script:Port = $info.Port
+    return $true
 }
 
 function Test-PortInUse([int]$p) {
     return [bool](Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)
 }
 
-function Start-Container {
-    if (Test-ContainerRunning) {
-        $script:Port = Read-Port
-        return $true
-    }
+function Start-Server {
     $p = $DEFAULT_PORT
     while (Test-PortInUse $p) {
         $p++
@@ -270,17 +272,38 @@ function Start-Container {
     $script:Port = $p
     try {
         [void][System.IO.Directory]::CreateDirectory($OutputDir)
-        [void][System.IO.Directory]::CreateDirectory($ConfigDir)
     } catch {
         Write-Host "無法建立資料夾：$OutputDir"
         return $false
     }
-    docker run -d --rm --name $CONTAINER -p "127.0.0.1:${p}:8080" `
-        -v "${OutputDir}:/app/output" `
-        -v "${ConfigDir}:/app/config" `
-        -e "VS_HOST_OUTPUT_DIR=$OutputDir" `
-        $IMAGE_LOCAL --web | Out-Null
-    return ($LASTEXITCODE -eq 0)
+    try {
+        [void][System.IO.Directory]::CreateDirectory($ConfigDir)
+        [void][System.IO.Directory]::CreateDirectory($LogDir)
+    } catch {
+        Write-Host "無法建立資料夾：$Root"
+        return $false
+    }
+    $env:VS_OUTPUT_DIR = $OutputDir
+    $env:VS_HOST_OUTPUT_DIR = $OutputDir
+    $env:VS_CONFIG_DIR = $ConfigDir
+    $env:VS_BIND = '127.0.0.1'
+    try {
+        $proc = Start-Process -WindowStyle Hidden -FilePath $VenvExe -ArgumentList @('--web', '--port', "$p") `
+            -RedirectStandardOutput $ServerLog -RedirectStandardError $ServerErrLog -PassThru -ErrorAction Stop
+    } catch {
+        Write-Host "無法啟動 vid-snatch：$VenvExe"
+        return $false
+    }
+    try {
+        $json = ConvertTo-Json @{ pid = $proc.Id; port = $p } -Compress
+        [System.IO.File]::WriteAllText($ServerFile, $json)
+    } catch {
+        # 沒有 server.json 就無法在結束時停止伺服器，所以直接停掉
+        try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch { }
+        Write-Host "無法寫入伺服器紀錄：$ServerFile"
+        return $false
+    }
+    return $true
 }
 
 # Windows PowerShell 5.1 的 Invoke-RestMethod 在回應沒有標 charset 時會用 ISO-8859-1 解碼，
@@ -303,7 +326,10 @@ function Wait-Health {
     Write-Host ''
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
     Write-Host ''
-    docker logs --tail 20 $CONTAINER
+    if (Test-Path -LiteralPath $ServerErrLog) {
+        Get-Content -LiteralPath $ServerErrLog -Tail 20 -Encoding UTF8 -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host $_ }
+    }
     Write-Host ''
     # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
     exit 1
@@ -318,8 +344,48 @@ function Open-Browser {
     }
 }
 
+# 伺服器行程與其所有子孫行程（Python、deno、ffmpeg…）的 pid
+function Get-ProcessTreeIds([int]$rootId) {
+    $ids = New-Object System.Collections.ArrayList
+    [void]$ids.Add($rootId)
+    try {
+        $all = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+        $i = 0
+        while ($i -lt $ids.Count) {
+            foreach ($p in $all) {
+                $childId = [int]$p.ProcessId
+                if ([int]$p.ParentProcessId -eq $ids[$i] -and -not $ids.Contains($childId)) {
+                    [void]$ids.Add($childId)
+                }
+            }
+            $i++
+        }
+    } catch { }
+    return @($ids)
+}
+
+# 停止伺服器並等到行程真的結束（更新時要覆寫 deno.exe 與 venv）；停不掉時回傳 $false 並保留 server.json
 function Stop-VidSnatch {
-    docker stop $CONTAINER *> $null
+    $info = Read-ServerInfo
+    if ($info) {
+        $main = Get-Process -Id $info.Id -ErrorAction SilentlyContinue
+        # 行程名稱不符代表伺服器早已結束、pid 被別的程式重用，不能動它
+        if ($main -and $main.ProcessName -eq 'vid-snatch') {
+            $procs = @(Get-Process -Id (Get-ProcessTreeIds $info.Id) -ErrorAction SilentlyContinue)
+            foreach ($proc in $procs) {
+                try { Stop-Process -InputObject $proc -Force -ErrorAction SilentlyContinue } catch { }
+            }
+            foreach ($proc in $procs) {
+                try {
+                    if (-not $proc.WaitForExit(15000)) { return $false }
+                } catch { }
+            }
+        }
+    }
+    try {
+        if (Test-Path -LiteralPath $ServerFile) { Remove-Item -LiteralPath $ServerFile -Force -ErrorAction Stop }
+    } catch { }
+    return $true
 }
 
 # ── 主機端動作 ──────────────────────────────
@@ -403,18 +469,10 @@ function Clear-Pickers {
 
 function Invoke-Uninstall($deleteDownloads) {
     Write-Host ''
-    Write-Host '移除 Docker 映像檔...'
-    Stop-VidSnatch
-    docker rmi $IMAGE_LOCAL $IMAGE_REMOTE *> $null
-    docker builder prune -f *> $null
-    Write-Host '移除設定檔...'
-    if (Test-Path -LiteralPath $ConfigDir) {
-        try {
-            [System.IO.Directory]::Delete($ConfigDir, $true)
-        } catch {
-            Write-Host "無法刪除設定資料夾，請自行刪除：$ConfigDir"
-        }
-    }
+    Write-Host '正在移除 vid-snatch…'
+    [void](Stop-VidSnatch)
+    # 這個腳本本身就在要刪除的資料夾裡，先離開，避免目前目錄鎖住資料夾
+    Set-Location -LiteralPath $env:TEMP
     if ($deleteDownloads -eq $true) {
         $out = "$OutputDir".TrimEnd('\')
         $def = "$DefaultOutputDir".TrimEnd('\')
@@ -433,35 +491,32 @@ function Invoke-Uninstall($deleteDownloads) {
             Write-Host "下載資料夾不是預設位置，為了安全不會自動刪除，如需要請自行刪除：$OutputDir"
         }
     }
+    if (Test-Path -LiteralPath $Root) {
+        try {
+            [System.IO.Directory]::Delete($Root, $true)
+        } catch {
+            Write-Host "無法刪除安裝資料夾，請自行刪除：$Root"
+        }
+    }
     Write-Host ''
     Write-Host '============================================'
     Write-Host '  解除安裝完成！'
-    Write-Host '  如需完全移除，可手動刪除此專案資料夾：'
-    Write-Host "  $ProjectDir"
+    Write-Host '  如需完全移除，可刪除你解壓縮的 vid-snatch 資料夾：'
+    if ($env:VS_LAUNCH_DIR) { Write-Host "  $env:VS_LAUNCH_DIR" }
     Write-Host '============================================'
     Wait-AnyKey '按任意鍵關閉...'
     exit 0
 }
 
+# 結束碼 10 請啟動器重新取得最新原始碼並以 -Upgrade 執行；只有使用者按「更新」才會走到這裡
 function Invoke-Rebuild {
     Write-Host '正在更新…'
-    Load-Config
-    Stop-VidSnatch
-    for ($w = 0; $w -lt 20; $w++) {
-        $left = docker ps -aq -f $NameFilter 2>$null
-        if (-not "$left".Trim()) { break }
-        Start-Sleep -Milliseconds 500
-    }
-    docker rmi $IMAGE_LOCAL *> $null
-    Ensure-Installed $Commit
-    if (-not (Start-Container)) {
-        Write-Host '重新啟動失敗'
-        docker logs --tail 20 $CONTAINER
+    if (-not (Stop-VidSnatch)) {
+        Write-Host '無法停止 vid-snatch，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
         # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
         exit 1
     }
-    Wait-Health
-    Open-Browser
+    exit 10
 }
 
 # 等待最多 $ms 毫秒；期間按下 Enter 回傳 $true
@@ -513,7 +568,7 @@ function Invoke-HostLoop {
                     'uninstall'   { Invoke-Uninstall $a.payload.delete_downloads }
                 }
             }
-        } elseif ($fails -ge 3 -and -not (Test-ContainerRunning)) {
+        } elseif ($fails -ge 3 -and -not (Test-ServerRunning)) {
             Write-Host 'vid-snatch 已停止。'
             exit 0
         }
@@ -526,26 +581,26 @@ function Invoke-HostLoop {
 # ── 主流程 ──────────────────────────────────
 Load-Config
 
-if (Test-ContainerRunning) {
-    $Port = Read-Port
+# 要在 Ensure-Installed 之前檢查，才不會在伺服器運作中重裝套件
+if (Test-ServerRunning) {
     Write-Host 'vid-snatch 已經在執行中，已幫你打開瀏覽器。'
     Open-Browser
     exit 0
 }
 
 Ensure-Installed $Commit -Upgrade:$Upgrade
-if (-not (Start-Container)) {
+if (-not (Start-Server)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
     # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
     exit 1
 }
 
-# Windows 沒有 trap：直接關閉視窗會砍掉這個程序，容器靠 15 秒心跳自行結束。
-# Ctrl-C 與正常結束（含 exit）都會執行 finally，停止我們啟動的容器。
+# Windows 沒有 trap：直接關閉視窗會砍掉這個程序，伺服器靠 15 秒心跳自行結束。
+# Ctrl-C 與正常結束（含 exit）都會執行 finally，停止我們啟動的伺服器。
 try {
     Wait-Health
     Open-Browser
     Invoke-HostLoop
 } finally {
-    Stop-VidSnatch
+    [void](Stop-VidSnatch)
 }
