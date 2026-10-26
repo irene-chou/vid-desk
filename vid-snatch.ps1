@@ -212,7 +212,7 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         $changed = $true
     } elseif ($Upgrade) {
         Write-Host '正在更新元件…'
-        Install-Packages @('--upgrade')
+        Install-Packages @('--upgrade', '--reinstall-package', 'vid-snatch')
         $changed = $true
     } elseif ($installed -ne $Commit -or $Commit -eq 'local' -or -not (Test-Path -LiteralPath $VenvExe)) {
         Write-Host '正在安裝新版 vid-snatch…'
