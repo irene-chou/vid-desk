@@ -10,10 +10,12 @@ from vid_snatch.core import (
     download_audio,
     download_video,
     fetch_title,
-    prompt_filename,
     remove_vocals,
+    sanitize_filename,
+    unique_path,
     validate_url,
 )
+from vid_snatch.errors import VidSnatchError
 
 
 def check_dependencies() -> bool:
@@ -48,6 +50,49 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def prompt_filename(default_title: str) -> str:
+    """Ask the user for a filename, using the video title as default."""
+    safe_default = sanitize_filename(default_title)
+    print(f"\n檔名 (預設: {safe_default})")
+    user_input = input("輸入自訂檔名，或按 Enter 使用預設: ").strip()
+    if user_input:
+        return sanitize_filename(user_input)
+    return safe_default
+
+
+def print_progress(percent: float | None) -> None:
+    print("\r...   " if percent is None else f"\r{percent:.0f}%   ", end="", flush=True)
+
+
+def run(args) -> None:
+    args.output.mkdir(parents=True, exist_ok=True)
+
+    print("正在取得影片資訊...")
+    title = fetch_title(args.url)
+    filename = prompt_filename(title)
+    ext = "mp4" if args.video else "mp3"
+    # 避免覆蓋既有檔案：已存在時改用 "name (1)"
+    filename = unique_path(args.output / f"{filename}.{ext}").stem
+
+    if args.video:
+        print(f"\nDownloading video from: {args.url}")
+        video_path = download_video(args.url, args.output, filename, on_progress=print_progress)
+        print(f"\nDone! Video saved: {video_path}")
+    elif args.no_vocals:
+        print(f"\nDownloading audio from: {args.url}")
+        audio_path = download_audio(
+            args.url, args.output, filename, audio_format="wav", on_progress=print_progress,
+        )
+        print(f"\nDownloaded: {audio_path}")
+        print("Separating vocals (first run downloads the model, ~80MB)...")
+        result_path = remove_vocals(audio_path, args.output, on_progress=print_progress)
+        print(f"\nInstrumental saved: {result_path}")
+    else:
+        print(f"\nDownloading audio from: {args.url}")
+        audio_path = download_audio(args.url, args.output, filename, on_progress=print_progress)
+        print(f"\nDone! Audio saved: {audio_path}")
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -55,29 +100,13 @@ def main():
     if not check_dependencies():
         sys.exit(1)
 
-    args.output.mkdir(parents=True, exist_ok=True)
-
-    # Fetch video title and let user choose filename
-    print(f"正在取得影片資訊...")
-    title = fetch_title(args.url)
-    filename = prompt_filename(title)
-
-    if args.video:
-        print(f"\nDownloading video from: {args.url}")
-        video_path = download_video(args.url, args.output, filename)
-        print(f"Done! Video saved: {video_path}")
-    elif args.no_vocals:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(
-            args.url, args.output, filename, audio_format="wav",
-        )
-        print(f"Downloaded: {audio_path}")
-        result_path = remove_vocals(audio_path, args.output)
-        print(f"Instrumental saved: {result_path}")
-    else:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(args.url, args.output, filename)
-        print(f"Done! Audio saved: {audio_path}")
+    try:
+        run(args)
+    except VidSnatchError as e:
+        print(f"\n{e.message}")
+        if e.detail:
+            print(e.detail)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

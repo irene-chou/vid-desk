@@ -2,11 +2,17 @@
 
 import argparse
 import re
-import shutil
+import subprocess
 import sys
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from vid_snatch.errors import VidSnatchError, translate
+
+# 百分比 0-100；None 表示不定進度
+ProgressCallback = Callable[[float | None], None]
 
 DEFAULT_OUTPUT_DIR = Path("./output")
 DEMUCS_MODEL = "htdemucs"
@@ -62,9 +68,8 @@ def fetch_title(url: str) -> str:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return info.get("title", "video")
-    except yt_dlp.utils.DownloadError as e:
-        print(f"\nFailed to fetch video info: {e}")
-        sys.exit(1)
+    except Exception as e:
+        raise translate(e) from e
 
 
 def sanitize_filename(name: str) -> str:
@@ -76,24 +81,77 @@ def sanitize_filename(name: str) -> str:
     return cleaned
 
 
-def prompt_filename(default_title: str) -> str:
-    """Ask the user for a filename, using the video title as default."""
-    safe_default = sanitize_filename(default_title)
-    print(f"\n檔名 (預設: {safe_default})")
-    user_input = input("輸入自訂檔名，或按 Enter 使用預設: ").strip()
-    if user_input:
-        return sanitize_filename(user_input)
-    return safe_default
+def unique_path(path: Path) -> Path:
+    """Return path, or 'name (N).ext' if it already exists."""
+    if not path.exists():
+        return path
+    n = 1
+    while True:
+        candidate = path.with_name(f"{path.stem} ({n}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def reload_ytdlp() -> None:
+    """Forget loaded yt_dlp modules so the next import picks up a new version."""
+    for name in [m for m in sys.modules if m == "yt_dlp" or m.startswith("yt_dlp.")]:
+        del sys.modules[name]
+
+
+def update_ytdlp(timeout: float = 30) -> bool:
+    """Upgrade yt-dlp via pip. Returns True on success."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-U", "yt-dlp"],
+            timeout=timeout,
+            capture_output=True,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    if result.returncode != 0:
+        return False
+    reload_ytdlp()
+    return True
+
+
+def _make_hook(on_progress: ProgressCallback | None):
+    def hook(d: dict) -> None:
+        if on_progress is None:
+            return
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            if total:
+                on_progress(d.get("downloaded_bytes", 0) / total * 100)
+        elif d.get("status") == "finished":
+            on_progress(None)
+
+    return hook
+
+
+def _run_download(url: str, ydl_opts: dict, on_progress: ProgressCallback | None) -> None:
+    import yt_dlp
+
+    ydl_opts = {
+        **ydl_opts,
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "progress_hooks": [_make_hook(on_progress)],
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(url, download=True)
+    except Exception as e:
+        raise translate(e) from e
 
 
 def download_audio(
     url: str, output_dir: Path, filename: str, audio_format: str = "mp3",
+    on_progress: ProgressCallback | None = None,
 ) -> Path:
-    import yt_dlp
-
-    ydl_opts = {
+    _run_download(url, {
         "format": "bestaudio/best",
-        "noplaylist": True,
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},
         "postprocessors": [
@@ -103,85 +161,53 @@ def download_audio(
                 "preferredquality": "192",
             }
         ],
-        "quiet": False,
-        "no_warnings": False,
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.extract_info(url, download=True)
-            audio_path = output_dir / f"{filename}.{audio_format}"
-            return audio_path
-    except yt_dlp.utils.DownloadError as e:
-        print(f"\nDownload failed: {e}")
-        sys.exit(1)
+    }, on_progress)
+    return output_dir / f"{filename}.{audio_format}"
 
 
-def download_video(url: str, output_dir: Path, filename: str) -> Path:
-    import yt_dlp
-
-    ydl_opts = {
+def download_video(
+    url: str, output_dir: Path, filename: str,
+    on_progress: ProgressCallback | None = None,
+) -> Path:
+    _run_download(url, {
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "noplaylist": True,
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},
         "merge_output_format": "mp4",
-        "quiet": False,
-        "no_warnings": False,
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.extract_info(url, download=True)
-            video_path = output_dir / f"{filename}.mp4"
-            return video_path
-    except yt_dlp.utils.DownloadError as e:
-        print(f"\nDownload failed: {e}")
-        sys.exit(1)
+    }, on_progress)
+    return output_dir / f"{filename}.mp4"
 
 
 def remove_vocals(
     audio_path: Path,
     output_dir: Path,
+    on_progress: ProgressCallback | None = None,
 ) -> Path:
-    import demucs.separate
+    from demucs.api import Separator, save_audio
 
-    print(f"Separating vocals using Demucs ({DEMUCS_MODEL})...")
-    print("(First run will download the model, ~80MB)")
+    def callback(d: dict) -> None:
+        if on_progress is None:
+            return
+        if "segment_offset" in d and d.get("audio_length"):
+            on_progress(d["segment_offset"] / d["audio_length"] * 100)
+        else:
+            on_progress(None)
 
     # Demucs can't handle special characters in filenames (full-width chars, etc.)
     # Rename to a safe temp name, process, then rename back
     original_stem = audio_path.stem
-    safe_name = uuid.uuid4().hex[:8]
-    safe_path = audio_path.parent / f"{safe_name}{audio_path.suffix}"
+    safe_path = audio_path.parent / f"{uuid.uuid4().hex[:8]}{audio_path.suffix}"
     audio_path.rename(safe_path)
 
-    demucs_dir = output_dir / "_demucs_temp"
-    args = [
-        "--two-stems", "vocals",
-        "-n", DEMUCS_MODEL,
-        "-o", str(demucs_dir),
-        "--mp3", "--mp3-bitrate", "192",
-        str(safe_path),
-    ]
-
+    no_vocals_dst = output_dir / f"{original_stem}_no_vocals.mp3"
     try:
-        demucs.separate.main(args)
+        separator = Separator(model=DEMUCS_MODEL, callback=callback)
+        _, stems = separator.separate_audio_file(safe_path)
+        no_vocals = stems["drums"] + stems["bass"] + stems["other"]
+        save_audio(no_vocals, str(no_vocals_dst), samplerate=separator.samplerate, bitrate=192)
     except Exception as e:
         safe_path.rename(audio_path)
-        print(f"\nVocal removal failed: {e}")
-        print(f"The downloaded audio is still available at: {audio_path}")
-        sys.exit(1)
+        raise translate(e) from e
 
-    # Demucs outputs to: _demucs_temp/htdemucs/<safe_name>/no_vocals.mp3
-    demucs_out = demucs_dir / DEMUCS_MODEL / safe_name
-    no_vocals_src = demucs_out / "no_vocals.mp3"
-
-    no_vocals_dst = output_dir / f"{original_stem}_no_vocals.mp3"
-    shutil.move(str(no_vocals_src), str(no_vocals_dst))
-
-    # Clean up
-    shutil.rmtree(demucs_dir, ignore_errors=True)
     safe_path.unlink(missing_ok=True)
-
     return no_vocals_dst
