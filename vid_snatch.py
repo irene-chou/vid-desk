@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = Path("./output")
-DEMUCS_MODEL = "htdemucs"
+DEMUCS_MODEL = "htdemucs_ft"  # fine-tuned: best quality, ~4x slower than htdemucs
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 YOUTUBE_PATTERNS = [
@@ -129,7 +129,7 @@ def remove_vocals(
     import demucs.separate
 
     print(f"Separating vocals using Demucs ({DEMUCS_MODEL})...")
-    print("(First run will download the model, ~80MB)")
+    print("(First run will download the model, ~320MB)")
 
     # Demucs can't handle special characters in filenames (full-width chars, etc.)
     # Rename to a safe temp name, process, then rename back
@@ -155,7 +155,7 @@ def remove_vocals(
         print(f"The downloaded audio is still available at: {audio_path}")
         sys.exit(1)
 
-    # Demucs outputs to: _demucs_temp/htdemucs/<safe_name>/no_vocals.mp3
+    # Demucs outputs to: _demucs_temp/htdemucs_ft/<safe_name>/no_vocals.mp3
     demucs_out = demucs_dir / DEMUCS_MODEL / safe_name
     no_vocals_src = demucs_out / "no_vocals.mp3"
 

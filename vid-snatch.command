@@ -97,11 +97,12 @@ while true; do
 
             echo ""
             echo "處理中..."
-            [ "$choice" = "2" ] && echo "(去人聲需要 1-2 分鐘，請耐心等候)"
+            [ "$choice" = "2" ] && echo "(去人聲需要 3-8 分鐘，首次會先下載約 320MB 模型，請耐心等候)"
             echo ""
 
             docker run --rm -it \
                 -v "$OUTPUT_DIR:/app/output" \
+                -v vid-snatch-models:/root/.cache/torch \
                 vid-snatch "$url" "${cmd[@]}"
 
             echo ""
