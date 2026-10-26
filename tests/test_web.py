@@ -21,6 +21,10 @@ def test_health(env):
     c, *_ = env
     assert c.get("/api/health").json()["ok"] is True
 
+def test_index_is_not_cached(env):
+    c, *_ = env
+    assert c.get("/").headers["cache-control"] == "no-store"
+
 def test_post_without_header_is_403(env):
     c, *_ = env
     assert c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "mode": "mp3"}).status_code == 403

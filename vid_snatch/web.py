@@ -73,7 +73,8 @@ def create_app(
 
     @app.get("/")
     def index():
-        return FileResponse(INDEX_HTML)
+        # 更新後瀏覽器不能沿用舊頁面
+        return FileResponse(INDEX_HTML, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/health")
     def health():
