@@ -2,7 +2,15 @@
 # vid-snatch 一鍵啟動腳本
 # 雙擊此檔案即可使用
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
+xattr -dr com.apple.quarantine "$(dirname "$0")" 2>/dev/null || true
+
+IMAGE_REMOTE="ghcr.io/irene-chou/vid-snatch:latest"
+IMAGE_LOCAL="vid-snatch"
+CONTAINER="vid-snatch"
+DEFAULT_PORT=8080
+PORT="$DEFAULT_PORT"
+PROJECT_DIR="$(pwd)"
 
 # ── 設定檔 ──────────────────────────────────
 CONFIG_DIR="$HOME/.config/vid-snatch"
@@ -25,178 +33,228 @@ save_config() {
     echo "output_dir=$1" > "$CONFIG_FILE"
 }
 
-load_config
+# ── Docker ──────────────────────────────────
+ensure_docker() {
+    if ! command -v docker &> /dev/null; then
+        echo "============================================"
+        echo "  需要先安裝 Docker Desktop"
+        echo "  下載：https://docker.com/products/docker-desktop/"
+        echo "============================================"
+        read -n 1 -p "按任意鍵開啟下載頁面..."
+        open "https://www.docker.com/products/docker-desktop/"
+        exit 1
+    fi
 
-# ── 檢查 Docker ─────────────────────────────
-if ! command -v docker &> /dev/null; then
+    if ! docker info &> /dev/null 2>&1; then
+        echo "正在啟動 Docker Desktop..."
+        open -a Docker
+        local waited=0 warned=0
+        while ! docker info &> /dev/null 2>&1; do
+            sleep 2
+            waited=$((waited + 2))
+            printf "."
+            if [ "$waited" -gt 30 ] && [ "$warned" -eq 0 ]; then
+                warned=1
+                echo ""
+                echo "若 Docker Desktop 跳出同意條款視窗，請按 Accept"
+            fi
+        done
+        echo ""
+        echo "Docker 已就緒！"
+    fi
+}
+
+ensure_image() {
+    echo "正在檢查更新…"
+    local want
+    case "$(uname -m)" in
+        arm64) want="arm64" ;;
+        x86_64) want="amd64" ;;
+        *) want="$(uname -m)" ;;
+    esac
+
+    if docker pull "$IMAGE_REMOTE" > /dev/null 2>&1 \
+        && [ "$(docker image inspect --format '{{.Architecture}}' "$IMAGE_REMOTE" 2>/dev/null)" = "$want" ]; then
+        docker tag "$IMAGE_REMOTE" "$IMAGE_LOCAL"
+    elif ! docker image inspect "$IMAGE_LOCAL" &> /dev/null; then
+        echo ""
+        echo "首次使用，正在建置環境（約 3-5 分鐘）…"
+        echo ""
+        docker build -t "$IMAGE_LOCAL" .
+        echo ""
+        echo "建置完成！"
+    fi
+}
+
+container_running() {
+    [ -n "$(docker ps -q -f "name=^${CONTAINER}\$")" ]
+}
+
+read_port() {
+    docker port "$CONTAINER" 8080 2>/dev/null | head -n 1 | sed 's/.*://'
+}
+
+start_or_attach() {
+    if container_running; then
+        PORT="$(read_port)"
+        return 0
+    fi
+    local p="$DEFAULT_PORT"
+    while lsof -iTCP:"$p" -sTCP:LISTEN &> /dev/null; do
+        p=$((p + 1))
+    done
+    PORT="$p"
+    mkdir -p "$OUTPUT_DIR" "$CONFIG_DIR"
+    docker run -d --rm --name "$CONTAINER" -p "$PORT:8080" \
+        -v "$OUTPUT_DIR:/app/output" \
+        -v "$CONFIG_DIR:/app/config" \
+        -e VS_HOST_OUTPUT_DIR="$OUTPUT_DIR" \
+        "$IMAGE_LOCAL" --web > /dev/null
+}
+
+wait_health() {
+    local i
+    for i in $(seq 1 120); do
+        if curl -sf "localhost:$PORT/api/health" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo ""
+    echo "啟動失敗，請把這個視窗的內容截圖給開發者"
+    echo ""
+    docker logs "$CONTAINER" 2>&1 | tail -20
+    echo ""
+    read -n 1 -p "按任意鍵關閉..."
+    exit 1
+}
+
+open_browser() {
+    if [ "$VS_NO_BROWSER" = "1" ]; then
+        echo "http://localhost:$PORT"
+    else
+        open "http://localhost:$PORT"
+    fi
+}
+
+cleanup() {
+    docker stop "$CONTAINER" > /dev/null 2>&1 || true
+}
+
+# ── 主機端動作 ──────────────────────────────
+post_result() {
+    # $1 = action id, $2 = JSON body
+    curl -s -m 5 -X POST -H 'X-Vid-Snatch: 1' -H 'Content-Type: application/json' \
+        -d "$2" "localhost:$PORT/api/host-actions/$1/result" > /dev/null 2>&1
+}
+
+pick_folder() {
+    # 在背景執行，避免對話框開著時中斷心跳
+    local id="$1" picked body
+    (
+        if picked=$(osascript -e 'POSIX path of (choose folder with prompt "選擇下載資料夾")' 2>/dev/null); then
+            [ "$picked" != "/" ] && picked="${picked%/}"
+        else
+            picked=""
+        fi
+        body=$(osascript -l JavaScript -e 'function run(argv){ return JSON.stringify({path: argv[0] || null}) }' "$picked")
+        post_result "$id" "$body"
+    ) > /dev/null 2>&1 &
+}
+
+do_uninstall() {
+    local delete_downloads="$1"
+    echo ""
+    echo "移除 Docker 映像檔..."
+    docker stop "$CONTAINER" > /dev/null 2>&1 || true
+    docker rmi "$IMAGE_LOCAL" "$IMAGE_REMOTE" > /dev/null 2>&1 || true
+    docker builder prune -f > /dev/null 2>&1 || true
+    echo "移除設定檔..."
+    rm -rf "$CONFIG_DIR"
+    if [ "$delete_downloads" = "1" ]; then
+        rm -rf "$OUTPUT_DIR"
+        echo "已刪除下載檔案。"
+    fi
+    echo ""
     echo "============================================"
-    echo "  需要先安裝 Docker Desktop"
-    echo "  下載：https://docker.com/products/docker-desktop/"
+    echo "  解除安裝完成！"
+    echo "  如需完全移除，可手動刪除此專案資料夾："
+    echo "  $PROJECT_DIR"
     echo "============================================"
-    read -n 1 -p "按任意鍵開啟下載頁面..."
-    open "https://www.docker.com/products/docker-desktop/"
+    exit 0
+}
+
+do_rebuild() {
+    echo "正在更新…"
+    docker stop "$CONTAINER" > /dev/null 2>&1 || true
+    while container_running; do sleep 0.5; done
+    docker rmi "$IMAGE_LOCAL" > /dev/null 2>&1 || true
+    ensure_image
+    start_or_attach
+    wait_health
+    open_browser
+}
+
+host_loop() {
+    echo ""
+    echo "vid-snatch 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。"
+
+    local json parsed id kind path del fails=0
+    while true; do
+        if json=$(curl -sf -m 3 "localhost:$PORT/api/host-actions" 2>/dev/null); then
+            fails=0
+            parsed=$(osascript -l JavaScript -e 'function run(argv){ const a = JSON.parse(argv[0]).actions; return a.map(x => [x.id, x.kind, (x.payload && x.payload.path) || "", (x.payload && x.payload.delete_downloads) ? "1" : "0"].join("\t")).join("\n") }' "$json" 2>/dev/null)
+            if [ -n "$parsed" ]; then
+                while IFS=$'\t' read -r id kind path del; do
+                    [ -z "$id" ] && continue
+                    case "$kind" in
+                        reveal)      open -R "$path" ;;
+                        pick_folder) pick_folder "$id" ;;
+                        shutdown)    exit 0 ;;
+                        rebuild)     do_rebuild ;;
+                        uninstall)   do_uninstall "$del" ;;
+                    esac
+                done <<< "$parsed"
+            fi
+        else
+            fails=$((fails + 1))
+            if [ "$fails" -ge 3 ] && ! container_running; then
+                echo "vid-snatch 已停止。"
+                exit 0
+            fi
+        fi
+
+        if [ -t 0 ]; then
+            if read -r -t 1 -s; then
+                open_browser
+            fi
+        else
+            sleep 1
+        fi
+    done
+}
+
+# ── 主流程 ──────────────────────────────────
+load_config
+ensure_docker
+
+if container_running; then
+    PORT="$(read_port)"
+    echo "vid-snatch 已經在執行中，已幫你打開瀏覽器。"
+    open_browser
+    exit 0
+fi
+
+ensure_image
+if ! start_or_attach; then
+    echo "啟動失敗，請把這個視窗的內容截圖給開發者"
+    read -n 1 -p "按任意鍵關閉..."
     exit 1
 fi
-
-# 檢查 Docker 是否正在執行
-if ! docker info &> /dev/null 2>&1; then
-    echo "正在啟動 Docker Desktop..."
-    open -a Docker
-    while ! docker info &> /dev/null 2>&1; do
-        sleep 2
-    done
-    echo "Docker 已就緒！"
-fi
-
-# 首次 build
-if ! docker image inspect vid-snatch &> /dev/null 2>&1; then
-    echo ""
-    echo "首次使用，正在建置環境（約 3-5 分鐘）..."
-    echo ""
-    docker build -t vid-snatch .
-    echo ""
-    echo "建置完成！"
-fi
-
-# ── 主迴圈 ───────────────────────────────────
-while true; do
-    echo ""
-    echo "============================================"
-    echo "  vid-snatch"
-    echo "============================================"
-    echo ""
-    echo "  1) 下載音檔 (MP3)"
-    echo "  2) 下載去人聲音檔 (MP3)"
-    echo "  3) 下載影片 (MP4)"
-    echo "  4) 設定"
-    echo "  5) 重新建置 (更新程式後使用)"
-    echo "  6) 解除安裝"
-    echo "  q) 離開"
-    echo ""
-    read -p "請選擇 [1/2/3/4/5/6/q]: " choice
-
-    case "$choice" in
-        1|2|3)
-            echo ""
-            read -p "請貼上 YouTube 網址: " url
-
-            if [ -z "$url" ]; then
-                echo "網址不能為空！"
-                continue
-            fi
-
-            # 確保輸出資料夾存在
-            mkdir -p "$OUTPUT_DIR"
-
-            # 組裝指令
-            cmd=()
-            case "$choice" in
-                2) cmd+=("--no-vocals") ;;
-                3) cmd+=("--video") ;;
-            esac
-
-            echo ""
-            echo "處理中..."
-            [ "$choice" = "2" ] && echo "(去人聲需要 1-2 分鐘，請耐心等候)"
-            echo ""
-
-            docker run --rm -it \
-                -v "$OUTPUT_DIR:/app/output" \
-                vid-snatch "$url" "${cmd[@]}"
-
-            echo ""
-            echo "============================================"
-            echo "  完成！檔案已存到："
-            echo "  $OUTPUT_DIR"
-            echo "============================================"
-
-            # 開啟資料夾
-            open "$OUTPUT_DIR" 2>/dev/null
-            ;;
-        4)
-            echo ""
-            echo "============================================"
-            echo "  設定"
-            echo "============================================"
-            echo ""
-            echo "  目前儲存路徑: $OUTPUT_DIR"
-            echo ""
-            read -p "輸入新路徑（按 Enter 保持不變）: " new_dir
-
-            if [ -n "$new_dir" ]; then
-                # 展開 ~ 為 $HOME
-                new_dir="${new_dir/#\~/$HOME}"
-                mkdir -p "$new_dir" 2>/dev/null
-
-                if [ -d "$new_dir" ]; then
-                    save_config "$new_dir"
-                    OUTPUT_DIR="$new_dir"
-                    echo ""
-                    echo "  ✓ 路徑已更新為: $OUTPUT_DIR"
-                else
-                    echo ""
-                    echo "  ✗ 無法建立資料夾: $new_dir"
-                fi
-            else
-                echo "  路徑未變更。"
-            fi
-            ;;
-        5)
-            echo ""
-            read -p "確定要重新建置嗎？這會需要 3-5 分鐘 [y/N]: " confirm
-            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-                echo "已取消。"
-                continue
-            fi
-            echo ""
-            echo "移除舊版本..."
-            docker rmi vid-snatch 2>/dev/null
-            docker builder prune -f 2>/dev/null
-            echo "重新建置中（約 3-5 分鐘）..."
-            docker build -t vid-snatch .
-            echo ""
-            echo "建置完成！舊的暫存檔已清除。"
-            ;;
-        6)
-            echo ""
-            echo "============================================"
-            echo "  解除安裝 vid-snatch"
-            echo "============================================"
-            echo ""
-            read -p "確定要解除安裝嗎？(y/N): " confirm
-            if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-                echo "已取消。"
-                continue
-            fi
-
-            echo ""
-            echo "移除 Docker 映像檔..."
-            docker rmi vid-snatch 2>/dev/null
-            docker builder prune -f 2>/dev/null
-
-            echo "移除設定檔..."
-            rm -rf "$CONFIG_DIR"
-
-            read -p "是否也刪除您先前下載的音檔與影片？($OUTPUT_DIR) (y/N): " del_output
-            if [ "$del_output" = "y" ] || [ "$del_output" = "Y" ]; then
-                rm -rf "$OUTPUT_DIR"
-                echo "已刪除下載檔案。"
-            fi
-
-            echo ""
-            echo "============================================"
-            echo "  解除安裝完成！"
-            echo "  如需完全移除，可手動刪除此專案資料夾："
-            echo "  $(pwd)"
-            echo "============================================"
-            exit 0
-            ;;
-        q|Q)
-            echo "Bye!"
-            exit 0
-            ;;
-        *)
-            echo "無效選擇，請輸入 1、2、3、4、5、6 或 q"
-            ;;
-    esac
-done
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+wait_health
+open_browser
+host_loop
