@@ -350,12 +350,22 @@ function Get-ProcessTreeIds([int]$rootId) {
     [void]$ids.Add($rootId)
     try {
         $all = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)
+        $created = @{}
+        foreach ($p in $all) { $created[[int]$p.ProcessId] = $p.CreationDate }
         $i = 0
         while ($i -lt $ids.Count) {
-            foreach ($p in $all) {
-                $childId = [int]$p.ProcessId
-                if ([int]$p.ParentProcessId -eq $ids[$i] -and -not $ids.Contains($childId)) {
-                    [void]$ids.Add($childId)
+            $parentId = [int]$ids[$i]
+            $parentCreated = $created[$parentId]
+            if ($null -ne $parentCreated) {
+                foreach ($p in $all) {
+                    $childId = [int]$p.ProcessId
+                    # ParentProcessId 在父行程結束後仍保留，pid 又會被重用；
+                    # 比父行程早建立的必定是別人的子行程（例如 explorer.exe），不能算進來
+                    if ([int]$p.ParentProcessId -eq $parentId -and $childId -ne $parentId -and
+                        $null -ne $p.CreationDate -and $p.CreationDate -ge $parentCreated -and
+                        -not $ids.Contains($childId)) {
+                        [void]$ids.Add($childId)
+                    }
                 }
             }
             $i++
