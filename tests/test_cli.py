@@ -42,3 +42,35 @@ def test_run_web_reads_env_and_defaults_host_output_dir(monkeypatch, tmp_path):
     assert str(captured["output_dir"]) == str(out)
     assert str(captured["config_dir"]) == str(cfg)
     assert out.is_dir()
+
+
+def _capture_server_host(monkeypatch, tmp_path):
+    import uvicorn
+
+    from vid_snatch import webserver
+
+    captured = {}
+    orig_init = uvicorn.Server.__init__
+
+    def spy_init(self, config):
+        captured["host"] = config.host
+        orig_init(self, config)
+
+    monkeypatch.setenv("VS_OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("VS_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setattr(uvicorn.Server, "__init__", spy_init)
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *a, **k: None)
+    monkeypatch.setattr(webserver.core, "update_ytdlp", lambda timeout=30: True)
+    monkeypatch.setattr(webserver, "create_app", lambda **kwargs: object())
+    webserver.run_web(8089)
+    return captured["host"]
+
+
+def test_run_web_binds_vs_bind(monkeypatch, tmp_path):
+    monkeypatch.setenv("VS_BIND", "127.0.0.1")
+    assert _capture_server_host(monkeypatch, tmp_path) == "127.0.0.1"
+
+
+def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
+    monkeypatch.delenv("VS_BIND", raising=False)
+    assert _capture_server_host(monkeypatch, tmp_path) == "0.0.0.0"

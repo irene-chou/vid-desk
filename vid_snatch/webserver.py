@@ -17,6 +17,7 @@ def run_web(port: int) -> None:
     output_dir = os.environ.get("VS_OUTPUT_DIR", "/app/output")
     config_dir = os.environ.get("VS_CONFIG_DIR", "/app/config")
     host_output_dir = os.environ.get("VS_HOST_OUTPUT_DIR", output_dir)
+    bind = os.environ.get("VS_BIND", "0.0.0.0")
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -33,7 +34,7 @@ def run_web(port: int) -> None:
         on_shutdown=lambda: setattr(server, "should_exit", True),
     )
     server = uvicorn.Server(
-        uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
+        uvicorn.Config(app, host=bind, port=port, log_level="warning")
     )
 
     def _update() -> None:
