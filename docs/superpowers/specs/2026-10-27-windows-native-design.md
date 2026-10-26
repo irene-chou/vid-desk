@@ -19,7 +19,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 - 離線或 GitHub 連不上時，已安裝過的使用者仍可啟動。
 
 **非目標**
-- macOS 不改，仍用 Docker（使用者決定）。
+- macOS 仍用 Docker（使用者決定），只為 3.8 的下載包配置做小改。
 - 不做 Windows 安裝程式（.msi / .exe installer），也不做程式碼簽章。
 - 不支援 Windows on ARM（PyTorch / Demucs 在該平台支援不完整）。遇到時顯示清楚的中文訊息後結束。
 - 不支援 GPU 加速。
@@ -91,6 +91,19 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 
 - README 的安裝段落分成 macOS（裝 Docker Desktop）與 Windows（不用裝任何東西）兩條路徑。
 - Windows 常見問題改寫：首次下載約 1–2 GB、資料放在哪、SmartScreen 處理方式（沿用）。
+
+### 3.8 下載包：兩個平台分開、執行檔放最外層
+
+使用者要求：執行檔要好找，Windows 和 Mac 分開。
+
+- 不再請使用者按 GitHub 的 `Code` → `Download ZIP`（解出來是整個 repo，執行檔混在 Dockerfile、tests、docs 之間）。
+- 改由 GitHub Actions 在每次 `main` 更新時產生兩個下載包，放在 GitHub Release（固定的 `latest/download` 網址），README 直接連過去：
+  - `vid-snatch-Windows.zip`：最外層只有 `vid-snatch.bat` 和一個 `files` 資料夾。
+  - `vid-snatch-Mac.zip`：最外層只有 `vid-snatch.command` 和一個 `files` 資料夾。
+  - `files` 裡是該平台需要的其餘檔案（原始碼、PowerShell 腳本或 Dockerfile 等）。
+- 兩個執行檔都要能同時在「下載包」與「直接 clone repo」兩種配置下運作（開發時仍從 repo 執行）。
+- macOS 的 `vid-snatch.command` 因此需要小改：在下載包配置下，從 `files` 建置映像檔。其餘行為不變。
+- 檔名維持英文，避免舊版 Windows 解壓縮工具把中文檔名變亂碼。
 
 ## 4. 留給實作者決定
 
