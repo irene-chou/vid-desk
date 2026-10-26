@@ -39,6 +39,19 @@ def test_create_jobs_and_list_reflects_progress(env):
     assert all(j["state"] == "done" and j["step"] == j["step_total"] for j in jobs)
     assert jobs[1]["url"] == "https://youtu.be/b"
 
+def test_create_jobs_with_per_url_filenames(env):
+    c, q, *_ = env
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b", "https://youtu.be/c"], "mode": "mp3",
+                                  "filenames": ["first", "", "third"], "overwrites": [False, False, True]}, headers=H)
+    jobs = r.json()["jobs"]
+    assert [j["filename"] for j in jobs] == ["first", None, "third"]
+    assert [q.get(j["id"]).overwrite for j in jobs] == [False, False, True]
+
+def test_create_jobs_rejects_mismatched_filenames(env):
+    c, q, *_ = env
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b"], "mode": "mp3", "filenames": ["x"]}, headers=H)
+    assert r.status_code == 400 and q.list() == []
+
 def test_create_jobs_rejects_any_invalid_url(env):
     c, q, *_ = env
     r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "nope"], "mode": "mp3"}, headers=H)

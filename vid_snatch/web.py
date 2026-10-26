@@ -23,6 +23,8 @@ class JobsIn(BaseModel):
     mode: Literal["mp3", "no_vocals", "mp4"]
     filename: str | None = None
     overwrite: bool = False
+    filenames: list[str | None] | None = None
+    overwrites: list[bool] | None = None
 
 
 class SettingsIn(BaseModel):
@@ -101,8 +103,15 @@ def create_app(
             if cleaned is None:
                 return _error(400, f"第 {i} 行不是 YouTube 網址")
             urls.append(cleaned)
-        filename = body.filename if len(urls) == 1 else None
-        jobs = [queue.add(u, body.mode, filename, body.overwrite) for u in urls]
+        n = len(urls)
+        if body.filenames is not None and len(body.filenames) != n:
+            return _error(400, "檔名數量和網址數量不一致")
+        if body.overwrites is not None and len(body.overwrites) != n:
+            return _error(400, "檔名數量和網址數量不一致")
+        filenames = body.filenames or ([body.filename] if n == 1 else [None] * n)
+        overwrites = body.overwrites or [body.overwrite] * n
+        jobs = [queue.add(u, body.mode, (f or "").strip() or None, o)
+                for u, f, o in zip(urls, filenames, overwrites)]
         return {"jobs": [j.to_dict() for j in jobs]}
 
     @app.get("/api/jobs")

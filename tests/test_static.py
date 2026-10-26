@@ -4,7 +4,7 @@ import re
 HTML = (Path(__file__).parent.parent / "vid_snatch/static/index.html").read_text()
 
 def test_required_ids_present():
-    for i in ["urls", "paste", "mode-mp3", "mode-no_vocals", "mode-mp4", "filename", "start", "jobs",
+    for i in ["urls", "paste", "mode-mp3", "mode-no_vocals", "mode-mp4", "names", "start", "jobs",
               "settings-toggle", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall"]:
         assert f'id="{i}"' in HTML, i
 
