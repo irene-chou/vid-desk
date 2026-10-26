@@ -1,10 +1,36 @@
 ﻿# vid-snatch 一鍵啟動腳本 (Windows)
 # 請雙擊 vid-snatch.bat，它會呼叫這個檔案。
 # 注意：此檔需存成 UTF-8 with BOM，Windows PowerShell 5.1 才能正確讀取中文。
+# 由 windows\launcher.ps1 以 -Commit <sha 或 local>（及更新時的 -Upgrade）呼叫；
+# 這個檔案所在的資料夾即要安裝的原始碼（含 pyproject.toml）。
+
+param(
+    [string]$Commit = 'local',
+    [switch]$Upgrade
+)
 
 $ProgressPreference = 'SilentlyContinue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
 Set-Location -LiteralPath $PSScriptRoot
+
+# ── 安裝目錄 ────────────────────────────────
+$Root = Join-Path $env:LOCALAPPDATA 'vid-snatch'
+$BinDir = Join-Path $Root 'bin'
+$UvExe = Join-Path $BinDir 'uv.exe'
+$PythonDir = Join-Path $Root 'python'
+$CacheDir = Join-Path $Root 'cache'
+$VenvDir = Join-Path $Root 'venv'
+$VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
+$VenvExe = Join-Path $VenvDir 'Scripts\vid-snatch.exe'
+$TorchDir = Join-Path $Root 'torch'
+$ModelFile = Join-Path $TorchDir 'hub\checkpoints\955717e8-8726e21a.th'
+$StateDir = Join-Path $Root 'state'
+$CommitMarker = Join-Path $StateDir 'installed-commit'
+$LogDir = Join-Path $Root 'logs'
+$ServerFile = Join-Path $Root 'server.json'
 
 $IMAGE_REMOTE = 'ghcr.io/irene-chou/vid-snatch:latest'
 $IMAGE_LOCAL = 'vid-snatch'
@@ -17,7 +43,7 @@ $ProjectDir = $PSScriptRoot
 $Pickers = New-Object System.Collections.ArrayList
 
 # ── 設定檔 ──────────────────────────────────
-$ConfigDir = Join-Path $env:USERPROFILE '.config\vid-snatch'
+$ConfigDir = Join-Path $Root 'config'
 $ConfigFile = Join-Path $ConfigDir 'config'
 $DefaultOutputDir = Join-Path $env:USERPROFILE 'Music\vid-snatch'
 $OutputDir = $DefaultOutputDir
@@ -54,77 +80,157 @@ function Wait-AnyKey([string]$msg) {
     Write-Host ''
 }
 
-# ── Docker ──────────────────────────────────
-function Ensure-Docker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        Write-Host '============================================'
-        Write-Host '  需要先安裝 Docker Desktop'
-        Write-Host '  下載：https://docker.com/products/docker-desktop/'
-        Write-Host '============================================'
-        Wait-AnyKey '按任意鍵開啟下載頁面...'
-        Start-Process 'https://www.docker.com/products/docker-desktop/'
+# ── 安裝 ────────────────────────────────────
+$UvUrl = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
+$DenoUrl = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
+$FfmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
+$ModelUrl = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th'
+$RetryHint = '請確認網路連線後重新雙擊 vid-snatch-Windows.bat'
+
+function Remove-IfExists([string]$path) {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }
+}
+
+function Assert-SupportedArch {
+    # 32 位元 PowerShell 跑在 64 位元 Windows 上時，真正的架構在 PROCESSOR_ARCHITEW6432
+    if ($env:PROCESSOR_ARCHITEW6432 -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
+        Write-Host '目前不支援 ARM 版 Windows'
         exit 1
     }
+}
 
-    docker info *> $null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host '正在啟動 Docker Desktop...'
-        $exe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
-        try {
-            if (Test-Path -LiteralPath $exe) { Start-Process -FilePath $exe }
-            else { Start-Process 'Docker Desktop' }
-        } catch { }
-        $waited = 0
-        $warned = $false
-        do {
-            Start-Sleep -Seconds 2
-            $waited += 2
-            Write-Host -NoNewline '.'
-            if ($waited -gt 30 -and -not $warned) {
-                $warned = $true
-                Write-Host ''
-                Write-Host '若 Docker Desktop 跳出同意條款視窗，請按 Accept'
-            }
-            docker info *> $null
-        } while ($LASTEXITCODE -ne 0)
+# 先寫到 <目標>.part，完成後才改名，中斷時不會留下看似完整的檔案
+function Save-Download([string]$Url, [string]$Dest, [string]$Label) {
+    Write-Host "正在下載 $Label…"
+    $part = "$Dest.part"
+    try {
+        [void][System.IO.Directory]::CreateDirectory((Split-Path $Dest -Parent))
+        Remove-IfExists $part
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $part -TimeoutSec 600 -UserAgent 'vid-snatch' -ErrorAction Stop
+        Move-Item -LiteralPath $part -Destination $Dest -Force -ErrorAction Stop
+    } catch {
+        try { Remove-IfExists $part } catch { }
         Write-Host ''
-        Write-Host 'Docker 已就緒！'
+        Write-Host "下載失敗，$RetryHint"
+        exit 1
     }
 }
 
-function Get-WantArch {
-    # 32 位元 PowerShell 跑在 64 位元 Windows 上時，真正的架構在 PROCESSOR_ARCHITEW6432
-    $a = $env:PROCESSOR_ARCHITEW6432
-    if (-not $a) { $a = $env:PROCESSOR_ARCHITECTURE }
-    switch ($a) {
-        'AMD64' { return 'amd64' }
-        'ARM64' { return 'arm64' }
-        default { return "$a".ToLower() }
+# 下載 zip、從中找出 $ExeNames 這幾個檔案放進 bin\（ffmpeg 的 zip 內為 <資料夾>\bin\ffmpeg.exe）
+function Install-ZipTool([string]$Url, [string]$Label, [string]$Key, [string[]]$ExeNames) {
+    $tmp = Join-Path $Root "tmp-$Key"
+    $zip = Join-Path $tmp "$Key.zip"
+    $out = Join-Path $tmp 'out'
+    try {
+        try { Remove-IfExists $tmp } catch { }
+        Save-Download $Url $zip $Label
+        try {
+            Expand-Archive -LiteralPath $zip -DestinationPath $out -Force -ErrorAction Stop
+            [void][System.IO.Directory]::CreateDirectory($BinDir)
+            foreach ($name in $ExeNames) {
+                $found = @(Get-ChildItem -LiteralPath $out -Recurse -File -Filter $name -ErrorAction Stop)
+                if ($found.Count -lt 1) { throw "$name not found in archive" }
+                $dest = Join-Path $BinDir $name
+                Copy-Item -LiteralPath $found[0].FullName -Destination "$dest.part" -Force -ErrorAction Stop
+                Move-Item -LiteralPath "$dest.part" -Destination $dest -Force -ErrorAction Stop
+            }
+        } catch {
+            Write-Host ''
+            Write-Host "無法安裝 $Label，$RetryHint"
+            exit 1
+        }
+    } finally {
+        try { Remove-IfExists $tmp } catch { }
     }
 }
 
-function Ensure-Image {
-    Write-Host '正在檢查更新…'
-    $want = Get-WantArch
-    $pulled = $false
-    docker pull $IMAGE_REMOTE *> $null
-    if ($LASTEXITCODE -eq 0) {
-        $arch = docker image inspect --format '{{.Architecture}}' $IMAGE_REMOTE 2>$null
-        if ($LASTEXITCODE -eq 0 -and "$arch".Trim() -eq $want) { $pulled = $true }
+function Set-InstallEnv {
+    # PATH 只在本行程內前置 bin\，不修改系統或使用者設定
+    if (-not ("$env:PATH".StartsWith("$BinDir;"))) { $env:PATH = "$BinDir;$env:PATH" }
+    $env:TORCH_HOME = $TorchDir
+    $env:UV_PYTHON_INSTALL_DIR = $PythonDir
+    $env:UV_CACHE_DIR = $CacheDir
+    # 一律用 uv 自己下載的 Python，避免日後移除系統 Python 時 venv 跟著壞掉
+    $env:UV_PYTHON_PREFERENCE = 'only-managed'
+}
+
+function Install-Packages([string[]]$Extra) {
+    $uvArgs = @('pip', 'install', '--python', $VenvPython) + $Extra + @($PSScriptRoot)
+    & $UvExe @uvArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ''
+        Write-Host "安裝元件失敗，$RetryHint"
+        Write-Host '若仍然失敗，請把這個視窗的內容截圖給開發者'
+        exit 1
+    }
+}
+
+# 結束後保證 bin\ 四個執行檔、venv 內的 vid-snatch、去人聲模型都在，且本行程環境變數已設好
+function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
+    Assert-SupportedArch
+    Set-InstallEnv
+
+    if (-not (Test-Path -LiteralPath $UvExe)) {
+        Install-ZipTool $UvUrl '安裝工具 uv' 'uv' @('uv.exe')
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $BinDir 'ffmpeg.exe')) -or
+        -not (Test-Path -LiteralPath (Join-Path $BinDir 'ffprobe.exe'))) {
+        Install-ZipTool $FfmpegUrl '影音工具 ffmpeg' 'ffmpeg' @('ffmpeg.exe', 'ffprobe.exe')
+    }
+    # yt-dlp 靠 deno 解 YouTube 驗證，更新時一併換成最新版
+    if ($Upgrade -or -not (Test-Path -LiteralPath (Join-Path $BinDir 'deno.exe'))) {
+        Install-ZipTool $DenoUrl '執行環境 deno' 'deno' @('deno.exe')
     }
 
-    if ($pulled) {
-        docker tag $IMAGE_REMOTE $IMAGE_LOCAL *> $null
-    } else {
-        docker image inspect $IMAGE_LOCAL *> $null
+    if (-not (Test-Path -LiteralPath $VenvPython)) {
+        Write-Host '正在準備 Python 環境…'
+        try {
+            # 殘缺的 venv 與其安裝紀錄一起清掉，下面會重新完整安裝
+            Remove-IfExists $VenvDir
+            Remove-IfExists $CommitMarker
+        } catch {
+            Write-Host "無法清除舊的 Python 環境，請自行刪除後再試：$VenvDir"
+            exit 1
+        }
+        & $UvExe venv --seed --python 3.12 $VenvDir
         if ($LASTEXITCODE -ne 0) {
             Write-Host ''
-            Write-Host '首次使用，正在建置環境（約 3-5 分鐘）…'
-            Write-Host ''
-            docker build -t $IMAGE_LOCAL .
-            Write-Host ''
-            Write-Host '建置完成！'
+            Write-Host "準備 Python 環境失敗，$RetryHint"
+            exit 1
         }
+    }
+
+    $installed = $null
+    if (Test-Path -LiteralPath $CommitMarker) {
+        $installed = ([System.IO.File]::ReadAllText($CommitMarker)).Trim()
+    }
+    $changed = $false
+    if ($null -eq $installed) {
+        Write-Host ''
+        Write-Host '正在安裝去人聲元件（約 1 GB，約 5–10 分鐘）…'
+        Install-Packages @()
+        $changed = $true
+    } elseif ($Upgrade) {
+        Write-Host '正在更新元件…'
+        Install-Packages @('--upgrade')
+        $changed = $true
+    } elseif ($installed -ne $Commit -or $Commit -eq 'local' -or -not (Test-Path -LiteralPath $VenvExe)) {
+        Write-Host '正在安裝新版 vid-snatch…'
+        Install-Packages @('--reinstall-package', 'vid-snatch')
+        $changed = $true
+    }
+    if ($changed) {
+        try {
+            [void][System.IO.Directory]::CreateDirectory($StateDir)
+            [System.IO.File]::WriteAllText($CommitMarker, $Commit)
+        } catch {
+            Write-Host "無法寫入安裝紀錄：$CommitMarker"
+            exit 1
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $ModelFile)) {
+        Save-Download $ModelUrl $ModelFile '去人聲模型（約 80 MB）'
     }
 }
 
@@ -347,7 +453,7 @@ function Invoke-Rebuild {
         Start-Sleep -Milliseconds 500
     }
     docker rmi $IMAGE_LOCAL *> $null
-    Ensure-Image
+    Ensure-Installed $Commit
     if (-not (Start-Container)) {
         Write-Host '重新啟動失敗'
         docker logs --tail 20 $CONTAINER
@@ -419,7 +525,6 @@ function Invoke-HostLoop {
 
 # ── 主流程 ──────────────────────────────────
 Load-Config
-Ensure-Docker
 
 if (Test-ContainerRunning) {
     $Port = Read-Port
@@ -428,7 +533,7 @@ if (Test-ContainerRunning) {
     exit 0
 }
 
-Ensure-Image
+Ensure-Installed $Commit -Upgrade:$Upgrade
 if (-not (Start-Container)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
     # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
