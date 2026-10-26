@@ -19,14 +19,6 @@ YOUTUBE_PATTERNS = [
 ]
 
 
-def check_dependencies() -> bool:
-    if not shutil.which("ffmpeg"):
-        print("Error: ffmpeg not found.")
-        print("Install via: brew install ffmpeg")
-        return False
-    return True
-
-
 def validate_url(url: str) -> str:
     for pattern in YOUTUBE_PATTERNS:
         if re.match(pattern, url):
@@ -55,7 +47,11 @@ def fetch_title(url: str) -> str:
 
 def sanitize_filename(name: str) -> str:
     """Remove characters that are unsafe for filenames."""
-    return UNSAFE_FILENAME_CHARS.sub("_", name).strip(". ")
+    cleaned = UNSAFE_FILENAME_CHARS.sub("_", name).strip(". ")
+    # Nothing meaningful left (empty or only replaced chars) -> generic name
+    if not cleaned.strip("_"):
+        return "video"
+    return cleaned
 
 
 def prompt_filename(default_title: str) -> str:
@@ -167,63 +163,3 @@ def remove_vocals(
     safe_path.unlink(missing_ok=True)
 
     return no_vocals_dst
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="vid-snatch",
-        description="Download YouTube audio/video, optionally remove vocals.",
-    )
-    parser.add_argument("url", type=validate_url, help="YouTube video URL")
-    parser.add_argument(
-        "-o", "--output", type=Path, default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})",
-    )
-
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
-        "--video", action="store_true",
-        help="Download video (MP4) instead of audio",
-    )
-    mode.add_argument(
-        "--no-vocals", action="store_true",
-        help="Remove vocals and keep instrumental only (Demucs)",
-    )
-
-    return parser
-
-
-def main():
-    parser = build_parser()
-    args = parser.parse_args()
-
-    if not check_dependencies():
-        sys.exit(1)
-
-    args.output.mkdir(parents=True, exist_ok=True)
-
-    # Fetch video title and let user choose filename
-    print(f"正在取得影片資訊...")
-    title = fetch_title(args.url)
-    filename = prompt_filename(title)
-
-    if args.video:
-        print(f"\nDownloading video from: {args.url}")
-        video_path = download_video(args.url, args.output, filename)
-        print(f"Done! Video saved: {video_path}")
-    elif args.no_vocals:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(
-            args.url, args.output, filename, audio_format="wav",
-        )
-        print(f"Downloaded: {audio_path}")
-        result_path = remove_vocals(audio_path, args.output)
-        print(f"Instrumental saved: {result_path}")
-    else:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(args.url, args.output, filename)
-        print(f"Done! Audio saved: {audio_path}")
-
-
-if __name__ == "__main__":
-    main()

@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir \
     pip install --no-cache-dir yt-dlp demucs
 
 # 再複製程式碼（改程式碼不會重新下載依賴）
-COPY vid_snatch.py ./
+COPY vid_snatch/ ./vid_snatch/
 RUN pip install --no-cache-dir --no-deps .
 
 ENTRYPOINT ["vid-snatch"]

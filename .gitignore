@@ -7,3 +7,5 @@ dist/
 build/
 .eggs/
 web_output/
+.venv/
+.pytest_cache/
