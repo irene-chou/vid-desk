@@ -4,6 +4,8 @@
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
 
 $ProgressPreference = 'SilentlyContinue'
+# 讓 Move-Item 等的失敗都成為例外，才會被 try/catch 接住並改走備援路徑
+$ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
