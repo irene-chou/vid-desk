@@ -91,7 +91,9 @@ container_running() {
 }
 
 read_port() {
-    docker port "$CONTAINER" 8080 2>/dev/null | head -n 1 | sed 's/.*://'
+    local p
+    p="$(docker port "$CONTAINER" 8080 2>/dev/null | head -n 1 | sed 's/.*://')"
+    echo "${p:-$DEFAULT_PORT}"
 }
 
 start_or_attach() {
@@ -152,7 +154,7 @@ pick_folder() {
     # 在背景執行，避免對話框開著時中斷心跳
     local id="$1" picked body
     (
-        if picked=$(osascript -e 'POSIX path of (choose folder with prompt "選擇下載資料夾")' 2>/dev/null); then
+        if picked=$(osascript -e 'tell application "System Events" to activate' -e 'tell application "System Events" to POSIX path of (choose folder with prompt "選擇下載資料夾")' 2>/dev/null); then
             [ "$picked" != "/" ] && picked="${picked%/}"
         else
             picked=""
@@ -172,8 +174,13 @@ do_uninstall() {
     echo "移除設定檔..."
     rm -rf "$CONFIG_DIR"
     if [ "$delete_downloads" = "1" ]; then
-        rm -rf "$OUTPUT_DIR"
-        echo "已刪除下載檔案。"
+        local out="${OUTPUT_DIR%/}" def="${DEFAULT_OUTPUT_DIR%/}"
+        if [ -n "$out" ] && [ "$out" = "$def" ]; then
+            rm -rf "$out"
+            echo "已刪除下載檔案。"
+        else
+            echo "下載資料夾不是預設位置，為了安全不會自動刪除，如需要請自行刪除：$OUTPUT_DIR"
+        fi
     fi
     echo ""
     echo "============================================"
@@ -186,11 +193,21 @@ do_uninstall() {
 
 do_rebuild() {
     echo "正在更新…"
+    load_config
     docker stop "$CONTAINER" > /dev/null 2>&1 || true
-    while container_running; do sleep 0.5; done
+    local w
+    for w in $(seq 1 20); do
+        [ -z "$(docker ps -aq -f "name=^${CONTAINER}\$")" ] && break
+        sleep 0.5
+    done
     docker rmi "$IMAGE_LOCAL" > /dev/null 2>&1 || true
     ensure_image
-    start_or_attach
+    if ! start_or_attach; then
+        echo "重新啟動失敗"
+        docker logs "$CONTAINER" 2>&1 | tail -20
+        read -n 1 -p "按任意鍵關閉..."
+        exit 1
+    fi
     wait_health
     open_browser
 }
@@ -203,9 +220,9 @@ host_loop() {
     while true; do
         if json=$(curl -sf -m 3 "localhost:$PORT/api/host-actions" 2>/dev/null); then
             fails=0
-            parsed=$(osascript -l JavaScript -e 'function run(argv){ const a = JSON.parse(argv[0]).actions; return a.map(x => [x.id, x.kind, (x.payload && x.payload.path) || "", (x.payload && x.payload.delete_downloads) ? "1" : "0"].join("\t")).join("\n") }' "$json" 2>/dev/null)
+            parsed=$(osascript -l JavaScript -e 'function run(argv){ const a = JSON.parse(argv[0]).actions; return a.map(x => [x.id, x.kind, (x.payload && x.payload.path) || "", (x.payload && x.payload.delete_downloads) ? "1" : "0"].join("\x1f")).join("\n") }' "$json" 2>/dev/null)
             if [ -n "$parsed" ]; then
-                while IFS=$'\t' read -r id kind path del; do
+                while IFS=$'\x1f' read -r id kind path del; do
                     [ -z "$id" ] && continue
                     case "$kind" in
                         reveal)      open -R "$path" ;;
