@@ -146,11 +146,16 @@ def _run_download(url: str, ydl_opts: dict, on_progress: ProgressCallback | None
         raise translate(e) from e
 
 
+def _overwrite_opts(overwrite: bool) -> dict:
+    return {"overwrites": True} if overwrite else {}
+
+
 def download_audio(
     url: str, output_dir: Path, filename: str, audio_format: str = "mp3",
-    on_progress: ProgressCallback | None = None,
+    on_progress: ProgressCallback | None = None, *, overwrite: bool = False,
 ) -> Path:
     _run_download(url, {
+        **_overwrite_opts(overwrite),
         "format": "bestaudio/best",
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},
@@ -167,9 +172,10 @@ def download_audio(
 
 def download_video(
     url: str, output_dir: Path, filename: str,
-    on_progress: ProgressCallback | None = None,
+    on_progress: ProgressCallback | None = None, *, overwrite: bool = False,
 ) -> Path:
     _run_download(url, {
+        **_overwrite_opts(overwrite),
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},

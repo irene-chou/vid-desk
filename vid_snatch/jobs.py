@@ -34,6 +34,7 @@ class Job:
     detail: str = ""
     result_path: str | None = None
     error_kind: str | None = None
+    display_name: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -41,14 +42,20 @@ class Job:
 
 class Backend(Protocol):
     def fetch_title(self, url: str) -> str: ...
-    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None) -> Path: ...
-    def download_video(self, url, output_dir, filename, on_progress=None) -> Path: ...
+    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False) -> Path: ...
+    def download_video(self, url, output_dir, filename, on_progress=None, *, overwrite=False) -> Path: ...
     def remove_vocals(self, audio_path, output_dir, on_progress=None) -> Path: ...
     def update_ytdlp(self, timeout=30) -> bool: ...
 
 
-def _target_name(name: str, mode: str) -> str:
-    return f"{name}_no_vocals.mp3" if mode == "no_vocals" else f"{name}.{mode}"
+UPDATE_FAILED_MESSAGE = "更新後仍無法下載，請稍後再試"
+
+
+def _target_names(name: str, mode: str) -> list[str]:
+    """這個模式會寫入（並可能刪除）的檔名；no_vocals 過程中會產生並刪除 <name>.wav。"""
+    if mode == "no_vocals":
+        return [f"{name}_no_vocals.mp3", f"{name}.wav"]
+    return [f"{name}.{mode}"]
 
 
 class JobQueue:
@@ -121,7 +128,7 @@ class JobQueue:
     # ---- 內部 ----
     def _unique_base(self, name: str, mode: str) -> str:
         candidate, n = name, 0
-        while (self.output_dir / _target_name(candidate, mode)).exists():
+        while any((self.output_dir / t).exists() for t in _target_names(candidate, mode)):
             n += 1
             candidate = f"{name} ({n})"
         return candidate
@@ -158,22 +165,31 @@ class JobQueue:
                 self._update(job, state="failed", message=err.message, detail=err.detail, error_kind=err.kind)
 
     def _run(self, job: Job) -> None:
-        b = self.backend
-        self._update(job, state="running", step=1, step_name=MODES[job.mode][0], percent=None)
-        name = core.sanitize_filename(job.filename if job.filename else b.fetch_title(job.url))
-        if not job.overwrite:
-            name = self._unique_base(name, job.mode)
-
         try:
-            path = self._download(job, name)
+            path = self._attempt(job)
         except VidSnatchError as e:
             if e.kind != "extractor_outdated":
                 raise
-            b.update_ytdlp()
-            path = self._download(job, name)
+            self.backend.update_ytdlp()
+            try:
+                path = self._attempt(job)
+            except VidSnatchError as e2:
+                if e2.kind != "extractor_outdated":
+                    raise
+                raise VidSnatchError("extractor_outdated", UPDATE_FAILED_MESSAGE, e2.detail) from e2
 
         self._update(job, state="done", step=job.step_total, step_name=MODES[job.mode][-1],
                      percent=100.0, result_path=str(path), message="", detail="", error_kind=None)
+
+    def _attempt(self, job: Job) -> Path:
+        """取得檔名並下載；YouTube 改版時整段（含取標題）會在更新 yt-dlp 後重跑一次。"""
+        self._update(job, state="running", step=1, step_name=MODES[job.mode][0], percent=None)
+        name = core.sanitize_filename(job.filename if job.filename else self.backend.fetch_title(job.url))
+        if not job.overwrite:
+            name = self._unique_base(name, job.mode)
+        with self._lock:
+            job.display_name = name  # 隨下一個步驟事件一起送出
+        return self._download(job, name)
 
     def _download(self, job: Job, name: str) -> Path:
         b = self.backend
@@ -187,10 +203,10 @@ class JobQueue:
                     self._update(job, percent=p)
 
         if job.mode == "mp3":
-            return b.download_audio(job.url, self.output_dir, name, "mp3", on_progress)
+            return b.download_audio(job.url, self.output_dir, name, "mp3", on_progress, overwrite=job.overwrite)
         if job.mode == "mp4":
-            return b.download_video(job.url, self.output_dir, name, on_progress)
-        wav = b.download_audio(job.url, self.output_dir, name, "wav", on_progress)
+            return b.download_video(job.url, self.output_dir, name, on_progress, overwrite=job.overwrite)
+        wav = b.download_audio(job.url, self.output_dir, name, "wav", on_progress, overwrite=job.overwrite)
         try:
             self._set_step(job, 4)
             return b.remove_vocals(wav, self.output_dir, on_progress)

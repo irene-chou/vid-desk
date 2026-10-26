@@ -103,3 +103,11 @@ def test_update_ytdlp_failure(monkeypatch):
     monkeypatch.setattr(core.subprocess, "run", lambda cmd, **kw: types.SimpleNamespace(returncode=1))
     monkeypatch.setattr(core, "reload_ytdlp", lambda: pytest.fail("should not reload"))
     assert core.update_ytdlp() is False
+
+
+@pytest.mark.parametrize("func", ["download_audio", "download_video"])
+def test_overwrites_only_when_requested(fake_ytdlp, tmp_path, func):
+    getattr(core, func)("https://youtu.be/x", tmp_path, "song")
+    assert "overwrites" not in FakeYDL.last_opts
+    getattr(core, func)("https://youtu.be/x", tmp_path, "song", overwrite=True)
+    assert FakeYDL.last_opts["overwrites"] is True

@@ -5,15 +5,22 @@ from vid_snatch.jobs import JobQueue, MODES
 from vid_snatch.errors import VidSnatchError
 
 class FakeBackend:
-    def __init__(self): self.updated = 0; self.fail_once = False
-    def fetch_title(self, url): return "Same Title"
-    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None):
+    def __init__(self):
+        self.updated = 0; self.fail_once = False; self.title_failures = 0; self.overwrites = []
+    def fetch_title(self, url):
+        if self.title_failures:
+            self.title_failures -= 1
+            raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "Unable to extract title")
+        return "Same Title"
+    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False):
+        self.overwrites.append(overwrite)
         if self.fail_once:
             self.fail_once = False
             raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "403")
         on_progress and on_progress(50.0)
         p = output_dir / f"{filename}.{audio_format}"; p.write_bytes(b"x"); return p
-    def download_video(self, url, output_dir, filename, on_progress=None):
+    def download_video(self, url, output_dir, filename, on_progress=None, *, overwrite=False):
+        self.overwrites.append(overwrite)
         p = output_dir / f"{filename}.mp4"; p.write_bytes(b"x"); return p
     def remove_vocals(self, audio_path, output_dir, on_progress=None):
         on_progress and on_progress(50.0)
@@ -89,3 +96,40 @@ def test_stop_with_pending_jobs_ends_worker(tmp_path):
     q.stop()
     assert not worker.is_alive()
     assert q._thread is None
+
+
+def test_title_outdated_updates_and_retries(q):
+    q.backend.title_failures = 1
+    job = q.add("https://youtu.be/a", "mp3")
+    run_until_idle(q)
+    assert job.state == "done" and q.backend.updated == 1
+
+def test_title_outdated_twice_fails_with_message(q):
+    q.backend.title_failures = 2
+    job = q.add("https://youtu.be/a", "mp3")
+    run_until_idle(q)
+    assert job.state == "failed" and q.backend.updated == 1
+    assert job.message == "更新後仍無法下載，請稍後再試"
+    assert job.error_kind == "extractor_outdated"
+    assert job.detail == "Unable to extract title"
+
+def test_display_name_is_resolved_title(q):
+    job = q.add("https://youtu.be/a", "mp3", filename=None)
+    assert job.to_dict()["display_name"] is None
+    run_until_idle(q)
+    assert job.display_name == "Same Title"
+
+@pytest.mark.parametrize("mode", ["mp3", "mp4", "no_vocals"])
+def test_overwrite_is_passed_to_backend(q, mode):
+    q.add("https://youtu.be/a", mode, filename="x", overwrite=True)
+    q.add("https://youtu.be/b", mode, filename="y")
+    run_until_idle(q)
+    assert q.backend.overwrites == [True, False]
+
+def test_no_vocals_skips_name_with_existing_wav(q, tmp_path):
+    (tmp_path / "song.wav").write_bytes(b"keep")
+    assert q.exists("song", "no_vocals") == (True, "song (1)")
+    job = q.add("https://youtu.be/a", "no_vocals", filename="song")
+    run_until_idle(q)
+    assert job.result_path == str(tmp_path / "song (1)_no_vocals.mp3")
+    assert (tmp_path / "song.wav").read_bytes() == b"keep"
