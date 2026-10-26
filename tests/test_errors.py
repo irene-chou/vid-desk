@@ -22,3 +22,6 @@ def test_translate(raw, kind, message):
 def test_translate_passthrough():
     e = VidSnatchError("network", "無法連線，請檢查網路", "x")
     assert translate(e) is e
+
+def test_bot_check_is_unknown():
+    assert translate(RuntimeError("Sign in to confirm you're not a bot")).kind == "unknown"
