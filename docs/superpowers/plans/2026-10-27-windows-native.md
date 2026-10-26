@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Windows 使用者雙擊 `vid-snatch.bat` 即可使用 vid-snatch，不需要 Docker、虛擬化或管理員權限。
+**Goal:** Windows 使用者雙擊 `vid-snatch-Windows.bat` 即可使用 vid-snatch，不需要 Docker、虛擬化或管理員權限。
 
-**Architecture:** `vid-snatch.bat` 呼叫一個穩定的小啟動器 `windows/launcher.ps1`。啟動器負責從 GitHub `main` 取得最新原始碼（含主腳本），放到 `%LOCALAPPDATA%\vid-snatch\app\`，再執行那一份 `vid-snatch.ps1`。主腳本用 uv 裝好 Python 環境與工具，以隱藏背景行程啟動 Python 伺服器，並沿用既有的 host action 主迴圈與心跳協定；Python 端與網頁不改，只多一個綁定位址的環境變數。
+**Architecture:** `vid-snatch-Windows.bat` 呼叫一個穩定的小啟動器 `windows/launcher.ps1`。啟動器負責從 GitHub `main` 取得最新原始碼（含主腳本），放到 `%LOCALAPPDATA%\vid-snatch\app\`，再執行那一份 `vid-snatch.ps1`。主腳本用 uv 裝好 Python 環境與工具，以隱藏背景行程啟動 Python 伺服器，並沿用既有的 host action 主迴圈與心跳協定；Python 端與網頁不改，只多一個綁定位址的環境變數。
 
 **Tech Stack:** Windows PowerShell 5.1、uv、Python 3.12、ffmpeg（BtbN 建置）、deno、GitHub Actions `windows-latest`。
 
@@ -41,8 +41,8 @@
 - 使用者看到的文字一律繁體中文；失敗時保留視窗（主腳本 `exit 1`，由 `.bat` 的 `if errorlevel 1 pause` 停住）。
 - 測試與開發用環境變數（使用者不會設）：`VS_NO_BROWSER=1`（只印網址，既有）、`VS_SOURCE=local`（不查 GitHub，直接用解壓資料夾的原始碼）、`VS_UPDATE_API`（覆寫查最新 commit 的網址，CI 用來模擬離線）。
 - Windows on ARM（`PROCESSOR_ARCHITEW6432` 或 `PROCESSOR_ARCHITECTURE` 為 `ARM64`）：顯示「目前不支援 ARM 版 Windows」後 `exit 1`。
-- macOS 的 `Dockerfile`、`publish.yml` 不改；`vid-snatch.command` 只在 Task 6 為下載包配置小改。
-- 兩種配置都要能跑：**repo 配置**（`vid-snatch.bat` 與 `windows\` 在 repo 根目錄）與**下載包配置**（最外層 `vid-snatch.bat` + `files\`，`files\` 內為 repo 根目錄的內容）。啟動器一律以「`launcher.ps1` 所在資料夾的上一層」作為原始碼資料夾，兩種配置皆成立。
+- macOS 的 `Dockerfile`、`publish.yml` 不改；`vid-snatch-Mac.command` 只在 Task 6 為下載包配置小改。
+- 兩種配置都要能跑：**repo 配置**（`vid-snatch-Windows.bat` 與 `windows\` 在 repo 根目錄）與**下載包配置**（最外層 `vid-snatch-Windows.bat`、`vid-snatch-Mac.command` + `files\`，`files\` 內為 repo 根目錄的內容）。啟動器一律以「`launcher.ps1` 所在資料夾的上一層」作為原始碼資料夾，兩種配置皆成立。
 
 ## Review Focus
 
@@ -82,11 +82,11 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
 
 ---
 
-### Task 2: 穩定啟動器 `windows/launcher.ps1` 與 `vid-snatch.bat`
+### Task 2: 穩定啟動器 `windows/launcher.ps1` 與 `vid-snatch-Windows.bat`
 
 **Files:**
 - Create: `windows/launcher.ps1`（UTF-8 BOM、CRLF）
-- Modify: `vid-snatch.bat`
+- Modify: `vid-snatch-Windows.bat`
 
 **Interfaces:**
 - Consumes: 主腳本 `vid-snatch.ps1`（Task 3、4 改寫）接受參數 `-Commit <string>`（SHA 或 `local`）與 `-Upgrade`（switch）。
@@ -94,7 +94,7 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
 
 這個檔案之後幾乎不再改，所以只做四件事，每件都要簡單：
 
-- [ ] **Step 1: 寫 `vid-snatch.bat`** — 保留 `chcp 65001`，改為呼叫啟動器：`%~dp0files\windows\launcher.ps1` 存在就用它（下載包配置），否則用 `%~dp0windows\launcher.ps1`（repo 配置）；以 `powershell -NoProfile -ExecutionPolicy Bypass -File "<路徑>"` 執行，保留 `if errorlevel 1 pause`。
+- [ ] **Step 1: 寫 `vid-snatch-Windows.bat`** — 保留 `chcp 65001`，改為呼叫啟動器：`%~dp0files\windows\launcher.ps1` 存在就用它（下載包配置），否則用 `%~dp0windows\launcher.ps1`（repo 配置）；以 `powershell -NoProfile -ExecutionPolicy Bypass -File "<路徑>"` 執行，保留 `if errorlevel 1 pause`。
 - [ ] **Step 2: 決定原始碼** — 實作 `Get-SourceDir([switch]$Upgrade) -> @{ Dir = <資料夾>; Commit = <sha 或 'local'> }`：
   - `VS_SOURCE=local` → 直接回傳解壓資料夾（`Split-Path $PSScriptRoot -Parent`），Commit=`local`。
   - 否則以 `VS_UPDATE_API`（預設為 Global Constraints 的 commits 網址）查最新 SHA，逾時 10 秒。
@@ -118,7 +118,7 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
 - Produces: `Ensure-Installed([string]$Commit, [switch]$Upgrade)`，結束後保證 `bin\` 四個 exe、`venv\Scripts\vid-snatch.exe`、模型檔都存在，且本行程環境已設好 `PATH`（前置 `$Root\bin`）、`TORCH_HOME`、`UV_PYTHON_INSTALL_DIR`、`UV_CACHE_DIR`。
 
 - [ ] **Step 1: 架構檢查** — ARM64 依 Global Constraints 拒絕。
-- [ ] **Step 2: `Save-Download([string]$Url, [string]$Dest, [string]$Label)`** — 印 `正在下載 <Label>…`，寫 `.part` 再改名；失敗時印「下載失敗，請確認網路連線後重新雙擊 vid-snatch.bat」並 `exit 1`。
+- [ ] **Step 2: `Save-Download([string]$Url, [string]$Dest, [string]$Label)`** — 印 `正在下載 <Label>…`，寫 `.part` 再改名；失敗時印「下載失敗，請確認網路連線後重新雙擊 vid-snatch-Windows.bat」並 `exit 1`。
 - [ ] **Step 3: 工具** — 各自「檔案不存在才下載」：uv（解出 `uv.exe`）、ffmpeg（從 zip 內 `*\bin\` 取 `ffmpeg.exe`、`ffprobe.exe`）、deno。`-Upgrade` 時重新下載 deno（yt-dlp 依賴它解 YouTube 驗證，需跟上新版）。
 - [ ] **Step 4: Python 環境** — `venv\Scripts\python.exe` 不存在時：印「正在準備 Python 環境…」，執行 `uv venv --seed --python 3.12 "$Root\venv"`。
 - [ ] **Step 5: 套件** — 規則：
@@ -180,24 +180,25 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
 
 ---
 
-### Task 6: 分平台下載包
+### Task 6: 單一下載包與執行檔改名
 
 **Files:**
+- Rename: `vid-snatch.bat` → `vid-snatch-Windows.bat`、`vid-snatch.command` → `vid-snatch-Mac.command`（`git mv`）
 - Create: `.github/workflows/release.yml`
-- Create: `scripts/build-packages.sh`
-- Modify: `vid-snatch.command`
+- Create: `scripts/build-package.sh`
+- Modify: `vid-snatch-Mac.command`、`vid-snatch.ps1`（訊息中的執行檔名）
 
 **Interfaces:**
-- Produces: GitHub Release tag `latest` 上的兩個資產 `vid-snatch-Windows.zip`、`vid-snatch-Mac.zip`，下載網址 `https://github.com/irene-chou/vid-snatch/releases/latest/download/vid-snatch-<Windows|Mac>.zip`（Task 7 README 使用）。
+- Produces: GitHub Release tag `latest` 上的資產 `vid-snatch.zip`，下載網址 `https://github.com/irene-chou/vid-snatch/releases/latest/download/vid-snatch.zip`（Task 7 README 使用）。
 
-- [ ] **Step 1: `scripts/build-packages.sh <out_dir>`** — 用 `git archive HEAD` 取得 repo 內容（套用 `.gitattributes` 的換行設定），組出：
-  - `vid-snatch-Windows/vid-snatch.bat` + `vid-snatch-Windows/files/`（`files/` 內容：`vid-snatch.ps1`、`windows/launcher.ps1`、`pyproject.toml`、`vid_snatch/`；不含 `windows/ci-smoke.ps1`、tests、docs、Dockerfile、`vid-snatch.command`）
-  - `vid-snatch-Mac/vid-snatch.command` + `vid-snatch-Mac/files/`（`files/` 內容：`Dockerfile`、`pyproject.toml`、`vid_snatch/`）
-  - 分別壓成 `<out_dir>/vid-snatch-Windows.zip`、`<out_dir>/vid-snatch-Mac.zip`，zip 內保留最外層資料夾名稱。`vid-snatch.command` 在 zip 內必須保有執行權限（用 `zip` 指令從檔案系統壓縮，事先 `chmod +x`）。
-- [ ] **Step 2: 本機驗證** — `bash scripts/build-packages.sh "$TMPDIR/pkg"`，用 `unzip -l` 確認兩個 zip 的最外層只有一個執行檔與 `files/`；`unzip -Z` 確認 `.command` 權限含 `x`；解開 Windows 包後 `head -c3 files/vid-snatch.ps1 | xxd` 為 `efbbbf` 且 `file` 顯示 CRLF。
-- [ ] **Step 3: `vid-snatch.command` 支援下載包配置** — `cd "$(dirname "$0")"` 之後：若 `files/Dockerfile` 存在，`docker build` 的 context 改用 `files`；`PROJECT_DIR`（解除安裝訊息顯示的資料夾）維持最外層。repo 配置行為完全不變。用 `bash -n vid-snatch.command` 檢查語法；在解開的 Mac 包裡設 `VS_NO_BROWSER=1` 執行一次，確認能啟動並印出網址（本機有 Docker）。
-- [ ] **Step 4: `.github/workflows/release.yml`** — 觸發 `push` 到 `main` 與 `workflow_dispatch`；`permissions: contents: write`；`ubuntu-latest` 執行 Step 1 腳本，再把 tag `latest` 移到目前 commit（`git tag -f latest && git push -f origin latest`），並以 `gh release` 建立（若不存在）或更新 release `latest`，上傳兩個 zip（`--clobber`）。release 不可標為 prerelease，否則 `releases/latest/download` 網址不會指向它。
-- [ ] **Step 5: Commit** — `ci: 每次更新產生 Windows 與 Mac 分開的下載包`
+> 改名放在本任務，但 Task 2–5 已直接使用新檔名撰寫；若執行到 Task 2 時尚未改名，Task 2 先做 `git mv`，本任務略過該步。
+
+- [ ] **Step 1: 改名與引用** — `git mv` 兩個執行檔；`grep -rn "vid-snatch\.bat\|vid-snatch\.command" --exclude-dir=.git --exclude-dir=docs .` 應無結果（README 由 Task 7 處理，可暫時例外）。
+- [ ] **Step 2: `scripts/build-package.sh <out_dir>`** — 用 `git archive HEAD` 取得 repo 內容（套用 `.gitattributes` 換行設定），組出 `vid-snatch/vid-snatch-Windows.bat`、`vid-snatch/vid-snatch-Mac.command`、`vid-snatch/files/`。`files/` 內容：`vid-snatch.ps1`、`windows/launcher.ps1`、`Dockerfile`、`pyproject.toml`、`vid_snatch/`；不含 tests、docs、`.github`、`windows/ci-smoke.ps1`、`scripts/`。壓成 `<out_dir>/vid-snatch.zip`，zip 內保留最外層 `vid-snatch/`。`.command` 在 zip 內必須保有執行權限（事先 `chmod +x`，用 `zip -r` 從檔案系統壓縮）。
+- [ ] **Step 3: 本機驗證** — `bash scripts/build-package.sh "$TMPDIR/pkg"`；`unzip -l` 確認 `vid-snatch/` 下只有兩個執行檔與 `files/`；`unzip -Z` 確認 `.command` 含 `x` 權限；解開後 `head -c3 vid-snatch/files/vid-snatch.ps1 | xxd` 為 `efbbbf`，`file` 顯示 `.bat` 與 `.ps1` 為 CRLF。
+- [ ] **Step 4: Mac 啟動檔支援下載包配置** — `cd "$(dirname "$0")"` 之後：若 `files/Dockerfile` 存在，`docker build` 的 context 改用 `files`；`PROJECT_DIR`（解除安裝訊息顯示的資料夾）維持最外層。repo 配置行為完全不變。`bash -n vid-snatch-Mac.command` 檢查語法；在解開的包裡以 `VS_NO_BROWSER=1` 執行一次，確認能啟動並印出網址（本機有 Docker），之後停止。
+- [ ] **Step 5: `.github/workflows/release.yml`** — 觸發 `push` 到 `main` 與 `workflow_dispatch`；`permissions: contents: write`；`ubuntu-latest` 執行 Step 2 腳本，把 tag `latest` 移到目前 commit（`git tag -f latest && git push -f origin latest`），以 `gh release` 建立（若不存在）或更新 release `latest`，上傳 `vid-snatch.zip`（`--clobber`）。release 不可標為 prerelease，否則 `releases/latest/download` 不會指向它。
+- [ ] **Step 6: Commit** — `feat: 單一下載包，最外層放 Windows 與 Mac 兩個執行檔`
 
 ---
 
@@ -206,7 +207,7 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: 安裝段落** — 拆成 macOS 與 Windows 兩段，各自第一步是直接下載對應的包（Task 6 的 `releases/latest/download` 網址），不再提 `Code` → `Download ZIP`。macOS：裝 Docker Desktop → 下載 `vid-snatch-Mac.zip` → 解壓縮 → 雙擊 `vid-snatch.command`（Gatekeeper 說明沿用）。Windows：不用先裝任何東西 → 下載 `vid-snatch-Windows.zip` → 解壓縮 → 雙擊 `vid-snatch.bat`（SmartScreen 說明沿用）。註明 `files` 資料夾不用打開。Windows 首次啟動說明「會自動下載約 1–2 GB，約 10–15 分鐘，視窗會顯示目前進度」。
+- [ ] **Step 1: 安裝段落** — 拆成 macOS 與 Windows 兩段，共同第一步是下載 `vid-snatch.zip`（Task 6 的 `releases/latest/download` 網址）並解壓縮，不再提 `Code` → `Download ZIP`。macOS：先裝 Docker Desktop → 雙擊 `vid-snatch-Mac.command`（Gatekeeper 說明沿用）。Windows：不用先裝任何東西 → 雙擊 `vid-snatch-Windows.bat`（SmartScreen 說明沿用）。註明 `files` 資料夾不用打開。Windows 首次啟動說明「會自動下載約 1–2 GB，約 10–15 分鐘，視窗會顯示目前進度」。
 - [ ] **Step 2: 使用段落** — 第 4 步改為「確認或修改每個網址的檔名，按『開始』」（配合多網址檔名清單）；移除「Windows 上，背景服務會在關閉視窗後約 15 秒自動停止」以外與 Docker 有關的 Windows 敘述，該句保留。
 - [ ] **Step 3: 常見問題** — 「Docker 跳出同意條款？」標明僅 macOS；新增「Windows 防毒軟體擋下載？」：說明會下載 uv、ffmpeg、deno 三個工具，被擋時允許後重新雙擊；「怎麼移除？」補充 Windows 會一併刪除 `%LOCALAPPDATA%\vid-snatch`。
 - [ ] **Step 4: Commit** — `docs: README 說明 Windows 免 Docker 安裝`
