@@ -39,7 +39,7 @@
 ## 版面
 
 - 桌面：雙欄 grid（5:6），左欄輸入面板，右欄排隊。手機（容器 ≤ 760px）堆疊，輸入在上。
-- 頂部：logo + 名稱；排隊 / 處理中 / 完成 / 失敗四個計數（圖示 + 數字，窄版隱藏）；右側設定圖示鈕。
+- 頂部：左側 logo + 名稱 + 版本號（`v0.3.1`，等寬小字、`--muted` 色，來自 `GET /api/settings` 的 `version`；取不到就不顯示）；右側設定圖示鈕。#25 之後不再有四個狀態計數，排隊卡片本身已足夠。
 - 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束；「進階」收合：更新、解除安裝，狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
 - 左欄由上到下：網址（textarea，右上貼上鈕）、輸出（兩張選項卡）、檔名（每個網址一列，上方小字為網址）、開始。
 - 右欄：「進行中與排隊」區；「已完成」分隔線（右側清除鈕）；卡片依新到舊。
@@ -188,10 +188,10 @@ SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位�
 ### `GET /api/settings` / `POST /api/settings`
 
 ```json
-{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null }
+{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null, "version": "0.3.1" }
 ```
 
-- `GET` 回傳上述四個欄位；`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
-- `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的四個欄位 + `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
+- `GET` 回傳上述欄位；`version` 是 `vid_snatch.__version__`（唯讀，頁首顯示用；`POST` 送來忽略）。`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
+- `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的欄位（含 `version`）+ `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
 - 「版本」（原曲 / 伴奏 / 人聲）不存設定，每次載入回到預設「原曲」。
 - 設定檔 `config` 每行 `key=value`，`output_dir` 永遠在第一行；bash / bat / ps1 啟動腳本只讀那一行，其餘行會被略過。
