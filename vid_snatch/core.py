@@ -10,12 +10,18 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from vid_snatch.errors import VidSnatchError, translate
-from vid_snatch.models import DEMUCS_MODEL
+from vid_snatch.models import DEMUCS_MODEL, DEMUCS_MODELS
 
 # 百分比 0-100；None 表示不定進度
 ProgressCallback = Callable[[float | None], None]
 
 DEFAULT_OUTPUT_DIR = Path("./output")
+# 位元率只對有損格式有意義；wav / flac 不帶 -b:a
+LOSSY_FORMATS = ("mp3", "m4a")
+# demucs 的 save_audio 只會寫 mp3 / wav / flac；其他格式的分離結果退回 mp3
+STEM_FORMATS = ("mp3", "wav", "flac")
+# 分離結果的檔名尾綴
+STEM_SUFFIXES = {"instrumental": "_no_vocals", "vocals": "_vocals"}
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 YOUTUBE_PATTERNS = [
@@ -150,33 +156,53 @@ def _overwrite_opts(overwrite: bool) -> dict:
     return {"overwrites": True} if overwrite else {}
 
 
+def _bitrate_opts(audio_format: str, bitrate: int) -> list[str]:
+    return ["-b:a", f"{bitrate}k"] if audio_format in LOSSY_FORMATS else []
+
+
 def download_audio(
     url: str, output_dir: Path, filename: str, audio_format: str = "mp3",
-    on_progress: ProgressCallback | None = None, *, overwrite: bool = False,
+    on_progress: ProgressCallback | None = None, *, overwrite: bool = False, bitrate: int = 192,
 ) -> Path:
+    postprocessor = {"key": "FFmpegExtractAudio", "preferredcodec": audio_format}
+    if audio_format in LOSSY_FORMATS:
+        postprocessor["preferredquality"] = str(bitrate)
     _run_download(url, {
         **_overwrite_opts(overwrite),
         "format": "bestaudio/best",
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": audio_format,
-                "preferredquality": "192",
-            }
-        ],
+        "postprocessors": [postprocessor],
     }, on_progress)
     return output_dir / f"{filename}.{audio_format}"
 
 
+def convert_audio(src: Path, dst: Path, audio_format: str, bitrate: int = 192) -> Path:
+    """用 yt-dlp 自己找到的 ffmpeg 把 src 轉成 audio_format（下載一次、多種輸出時用）。"""
+    from yt_dlp.postprocessor.ffmpeg import ACODECS, FFmpegPostProcessor
+
+    _, codec, more_opts = ACODECS[audio_format]
+    codec_opts = ["-acodec", codec] if codec else []
+    opts = ["-vn", *codec_opts, *more_opts, *_bitrate_opts(audio_format, bitrate)]
+    try:
+        FFmpegPostProcessor().run_ffmpeg(str(src), str(dst), opts)
+    except Exception as e:
+        raise translate(e) from e
+    return dst
+
+
+def _video_format(max_height: int | None) -> str:
+    h = f"[height<={max_height}]" if max_height else ""
+    return f"bestvideo{h}[ext=mp4]+bestaudio[ext=m4a]/best{h}[ext=mp4]/best{h}/best"
+
+
 def download_video(
     url: str, output_dir: Path, filename: str,
-    on_progress: ProgressCallback | None = None, *, overwrite: bool = False,
+    on_progress: ProgressCallback | None = None, *, overwrite: bool = False, max_height: int | None = None,
 ) -> Path:
     _run_download(url, {
         **_overwrite_opts(overwrite),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": _video_format(max_height),
         "paths": {"home": str(output_dir)},
         "outtmpl": {"default": f"{filename}.%(ext)s"},
         "merge_output_format": "mp4",
@@ -184,20 +210,40 @@ def download_video(
     return output_dir / f"{filename}.mp4"
 
 
+def stem_format(audio_format: str) -> str:
+    """分離結果的實際格式：demucs 只能寫 mp3 / wav / flac，m4a 退回 mp3。"""
+    return audio_format if audio_format in STEM_FORMATS else "mp3"
+
+
 def remove_vocals(
     audio_path: Path,
     output_dir: Path,
     on_progress: ProgressCallback | None = None,
-) -> Path:
+    *,
+    model: str = DEMUCS_MODEL,
+    stems: tuple[str, ...] = ("instrumental",),
+    audio_format: str = "mp3",
+    bitrate: int = 192,
+) -> dict[str, Path]:
+    """跑一次 demucs，同時寫出要求的 stems（instrumental / vocals），回傳 {stem: 路徑}。
+
+    來源檔保留不刪，呼叫端決定是否還要用它當原曲輸出。
+    """
     from demucs.api import Separator, save_audio
 
+    if model not in DEMUCS_MODELS:
+        raise ValueError(f"未知的分離模型：{model}")
+    if not stems or any(s not in STEM_SUFFIXES for s in stems):
+        raise ValueError(f"未知的分離輸出：{stems}")
+    fmt = stem_format(audio_format)
+
     def callback(d: dict) -> None:
-        if on_progress is None:
+        # htdemucs_ft 是 4 個模型的 bag：每個模型都從 0 跑到 audio_length，要合成整體進度
+        if on_progress is None or not d.get("audio_length") or "segment_offset" not in d:
             return
-        if "segment_offset" in d and d.get("audio_length"):
-            on_progress(d["segment_offset"] / d["audio_length"] * 100)
-        else:
-            on_progress(None)
+        models = d.get("models") or 1
+        done = d.get("model_idx_in_bag", 0) + d["segment_offset"] / d["audio_length"]
+        on_progress(min(100.0, done / models * 100))
 
     # Demucs can't handle special characters in filenames (full-width chars, etc.)
     # Rename to a safe temp name, process, then rename back
@@ -205,15 +251,17 @@ def remove_vocals(
     safe_path = audio_path.parent / f"{uuid.uuid4().hex[:8]}{audio_path.suffix}"
     audio_path.rename(safe_path)
 
-    no_vocals_dst = output_dir / f"{original_stem}_no_vocals.mp3"
+    targets = {s: output_dir / f"{original_stem}{STEM_SUFFIXES[s]}.{fmt}" for s in stems}
     try:
-        separator = Separator(model=DEMUCS_MODEL, callback=callback)
-        _, stems = separator.separate_audio_file(safe_path)
-        no_vocals = stems["drums"] + stems["bass"] + stems["other"]
-        save_audio(no_vocals, str(no_vocals_dst), samplerate=separator.samplerate, bitrate=192)
+        separator = Separator(model=model, callback=callback)
+        _, sources = separator.separate_audio_file(safe_path)
+        if "instrumental" in targets:
+            no_vocals = sources["drums"] + sources["bass"] + sources["other"]
+            save_audio(no_vocals, str(targets["instrumental"]), samplerate=separator.samplerate, bitrate=bitrate)
+        if "vocals" in targets:
+            save_audio(sources["vocals"], str(targets["vocals"]), samplerate=separator.samplerate, bitrate=bitrate)
     except Exception as e:
-        safe_path.rename(audio_path)
         raise translate(e) from e
-
-    safe_path.unlink(missing_ok=True)
-    return no_vocals_dst
+    finally:
+        safe_path.rename(audio_path)
+    return targets

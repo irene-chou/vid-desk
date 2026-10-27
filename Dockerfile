@@ -19,7 +19,7 @@ RUN apt-get update && \
     apt-get purge -y --auto-remove build-essential cmake && \
     rm -rf /var/lib/apt/lists/* /root/.cache /root/.cargo /root/.rustup
 
-# 預載 Demucs htdemucs_ft 模型（約 320 MB），第一次去人聲不必等下載。
+# 預載兩個 Demucs 模型（快速 htdemucs 約 80 MB、高品質 htdemucs_ft 約 320 MB），第一次去人聲不必等下載。
 # demucs 4.1 從 Hugging Face Hub 讀模型，所以放進 HF 快取（/root/.cache/huggingface）；
 # 執行時 HF_HUB_OFFLINE=1 只讀快取、不連網
 COPY vid_snatch/models.py /tmp/models.py

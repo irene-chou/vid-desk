@@ -299,7 +299,7 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     # 套件有變動時也重跑一次：已下載的檔案只做快速比對，新版改用別的模型時會補下載
     if ($pkgChanged -or -not (Test-Path -LiteralPath $ModelMarker)) {
         Write-Host ''
-        Write-Host '正在準備去人聲模型（第一次約 320 MB）…'
+        Write-Host '正在準備去人聲模型（快速與高品質兩種，第一次約 400 MB）…'
         try { Remove-IfExists $ModelMarker } catch { }
         Remove-Item Env:\HF_HUB_OFFLINE -ErrorAction SilentlyContinue
         & $VenvPython -m vid_snatch.models | Out-Host
