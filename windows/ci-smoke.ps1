@@ -1,6 +1,8 @@
 ﻿# vid-snatch Windows 原生安裝冒煙測試（只給 GitHub Actions 用）
 # 依序跑下面的情境，共用同一份安裝；任一情境失敗就印出啟動器輸出與 $Root\logs\* 後 exit 1。
-# 需要環境變數 VS_SMOKE_SHA：這次測試的 commit（workflow 傳入），用來走真正的「從 GitHub 更新」路徑。
+# 需要環境變數 VS_SMOKE_SHA：這次測試的 commit（workflow 傳入），用來走真正的「從 GitHub 更新」路徑：
+# 啟動器查的 releases/latest 端點以本機 http.server 假冒（VS_UPDATE_API），tag_name 回這個 sha，
+# 啟動器就會下載 github.com/<repo>/archive/<sha>.zip。
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
 
 $ProgressPreference = 'SilentlyContinue'
@@ -33,7 +35,11 @@ $DefaultOutputDir = Join-Path $MusicDir 'vid-snatch'
 $CustomOutputDir = Join-Path $TestHome '自訂 下載'
 
 $Sha = "$env:VS_SMOKE_SHA".Trim()
-$ShaApi = "https://api.github.com/repos/irene-chou/vid-snatch/commits/$Sha"
+# 假的 releases/latest：回應格式與 GitHub 相同（只需 tag_name），由 Start-MockApi 啟動
+$MockApiPort = 8765
+$MockApi = "http://127.0.0.1:$MockApiPort/latest.json"
+$MockApiDir = Join-Path $env:RUNNER_TEMP 'mock-api'
+$MockApiServer = $null
 $OfflineApi = 'http://127.0.0.1:9/'
 
 $SmokeLogDir = Join-Path $env:RUNNER_TEMP 'smoke-logs'
@@ -90,6 +96,7 @@ function Fail([string]$msg) {
     $info = Read-ServerJson
     if ($info) { try { Stop-Process -Id $info.pid -Force } catch { } }
     if ($PortHolder) { try { Stop-Process -Id $PortHolder.Id -Force } catch { } }
+    if ($MockApiServer) { try { Stop-Process -Id $MockApiServer.Id -Force } catch { } }
     exit 1
 }
 
@@ -286,6 +293,27 @@ function Get-FileList([string]$dir) {
     return ($items -join "`n")
 }
 
+# 用 http.server 假冒 GitHub 的 releases/latest：latest.json 的 tag_name 填這次測試的 sha
+function Start-MockApi {
+    Remove-IfExists $MockApiDir
+    New-Item -ItemType Directory -Force -Path $MockApiDir | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $MockApiDir 'latest.json'),
+        "{`"tag_name`": `"$Sha`", `"name`": `"vid-snatch smoke`"}", (New-Object System.Text.UTF8Encoding($false)))
+    $python = (Get-Command python).Source
+    $script:MockApiServer = Start-Process -FilePath $python `
+        -ArgumentList '-m', 'http.server', "$MockApiPort", '--bind', '127.0.0.1', '--directory', "`"$MockApiDir`"" `
+        -PassThru -WindowStyle Hidden
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not (Get-NetTCPConnection -LocalPort $MockApiPort -State Listen -ErrorAction SilentlyContinue)) {
+        if ($MockApiServer.HasExited -or $sw.Elapsed.TotalSeconds -ge 30) { Fail "無法在 $MockApiPort 啟動假的 releases/latest 端點" }
+        Start-Sleep -Milliseconds 500
+    }
+    $got = ''
+    try { $got = "$((ConvertFrom-Json (Get-Text $MockApi)).tag_name)" } catch { Fail "假端點 $MockApi 讀不到：$($_.Exception.Message)" }
+    if ($got -ne $Sha) { Fail "假端點回傳 tag_name「$got」，預期 $Sha" }
+    Write-Host "假的 releases/latest 已就緒：$MockApi → tag_name $got"
+}
+
 function Invoke-Robocopy([string]$from, [string]$to, [string[]]$extra) {
     $rcArgs = @($from, $to, '/E', '/NFL', '/NDL', '/NJH', '/NP', '/R:1', '/W:1') + $extra
     # 外部程式寫 stderr 時不要被 'Stop' 當成例外
@@ -437,22 +465,12 @@ Write-Host "使用者資料夾沒有 .cache"
 # ── 5. 從 GitHub 取得原始碼 ─────────────────
 Start-Scenario '5. 從 GitHub 取得原始碼'
 Remove-Item Env:\VS_SOURCE
-# 先自己查一次，GitHub API 被限流或查不到這個 commit 時直接說清楚
-try {
-    $r = Invoke-WebRequest -UseBasicParsing -Uri $ShaApi -TimeoutSec 15 -UserAgent 'vid-snatch' `
-        -Headers @{ Accept = 'application/vnd.github.sha' }
-    $got = ([System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())).Trim()
-    Write-Host "GitHub API 回應 $got（X-RateLimit-Remaining：$($r.Headers['X-RateLimit-Remaining'])）"
-} catch {
-    $remaining = ''
-    try { $remaining = $_.Exception.Response.Headers['X-RateLimit-Remaining'] } catch { }
-    Fail "無法查詢 $ShaApi：$($_.Exception.Message)（X-RateLimit-Remaining：$remaining；可能被 GitHub 限流）"
-}
-if ($got -ne $Sha) { Fail "GitHub API 回傳 $got，預期 $Sha" }
-$env:VS_UPDATE_API = $ShaApi
+Start-MockApi
+$env:VS_UPDATE_API = $MockApi
 $fetch = Start-Launcher 'launcher-fetch'
 $info5 = Wait-Server $fetch (15 * 60)
-if ((Read-Text (Join-Path $AppDir '.commit')) -ne $Sha) { Fail "app\.commit 不是 $Sha" }
+# 啟動器把假端點回的 tag_name（這裡是 sha）寫進 app\.commit；封存檔下載失敗時會退回本機原始碼，.commit 就不會是它
+if ((Read-Text (Join-Path $AppDir '.commit')) -ne $Sha) { Fail "app\.commit 是「$(Read-Text (Join-Path $AppDir '.commit'))」，預期 $Sha（封存檔 github.com/irene-chou/vid-snatch/archive/$Sha.zip 下載失敗？）" }
 if (-not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) { Fail 'app\vid-snatch.ps1 不存在' }
 if ((Read-Text $CommitMarker) -ne $Sha) { Fail "state\installed-commit 是「$(Read-Text $CommitMarker)」，預期 $Sha" }
 Write-Host "app\ 與 state\installed-commit 都是 $Sha"
@@ -479,7 +497,7 @@ Assert-OutputLacks 'launcher-offline' '正在安裝新版'
 
 # ── 8. 更新 ─────────────────────────────────
 Start-Scenario '8. 更新'
-$env:VS_UPDATE_API = $ShaApi
+$env:VS_UPDATE_API = $MockApi
 $upd = Start-Launcher 'launcher-update'
 $info8 = Wait-Server $upd 120
 Invoke-Post $info8.port '/api/rebuild' ''
@@ -554,6 +572,7 @@ if (Test-Path -LiteralPath $DefaultOutputDir) { Fail "預設下載資料夾應�
 Assert-OutputContains 'launcher-uninstall-default' '已刪除下載檔案'
 Write-Host "$Root 與預設下載資料夾都已刪除"
 
+if ($MockApiServer) { try { Stop-Process -Id $MockApiServer.Id -Force } catch { } }
 Write-Host ''
 Write-Host '全部情境通過'
 exit 0

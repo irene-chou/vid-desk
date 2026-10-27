@@ -1,12 +1,14 @@
 ﻿# vid-snatch 一鍵啟動腳本 (Windows)
 # 請雙擊 vid-snatch-Windows.bat，它會呼叫這個檔案。
 # 注意：此檔需存成 UTF-8 with BOM，Windows PowerShell 5.1 才能正確讀取中文。
-# 由 windows\launcher.ps1 以 -Commit <sha 或 local>（及更新時的 -Upgrade）呼叫；
+# 由 windows\launcher.ps1 以 -Commit <版本標記或 local>（及更新時的 -Upgrade）呼叫；
 # 這個檔案所在的資料夾即要安裝的原始碼（含 pyproject.toml）。
 #
 # 與 launcher.ps1 的約定——啟動器發佈後無法再更新，以下永遠不能改：
 #   - 這個檔案固定放在原始碼封存檔的根目錄，檔名 vid-snatch.ps1
-#   - 接受 -Commit <40 碼 sha 或 local> 與 -Upgrade 兩個參數（日後只能新增選用參數）
+#   - 接受 -Commit <版本標記或 local> 與 -Upgrade 兩個參數（日後只能新增選用參數）。
+#     版本標記是不透明字串，只拿來與 state\installed-commit 比對是否相同：
+#     新版啟動器傳 release 標籤名稱（如 v0.3.0），舊版啟動器傳 40 碼 commit sha，兩者都要接受
 #   - 結束碼 10 只在使用者按「更新」時回傳（啟動器會重新取原始碼並以 -Upgrade 再執行）；
 #     其他情況只回傳 0（正常結束）或 1（失敗，.bat 會停住視窗）
 
