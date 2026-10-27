@@ -36,10 +36,9 @@ class FakeBackend:
     def separate(self, audio_path, output_dir, on_progress=None, *, model="htdemucs_ft", stems=("instrumental",), audio_format="mp3", bitrate=192):
         self.calls.append(("separate", model, tuple(stems), audio_format, bitrate))
         on_progress and on_progress(50.0)
-        fmt = audio_format if audio_format in ("mp3", "wav", "flac") else "mp3"
         out = {}
         for s in stems:
-            p = output_dir / f"{audio_path.stem}{'_no_vocals' if s == 'instrumental' else '_vocals'}.{fmt}"
+            p = output_dir / f"{audio_path.stem}{'_no_vocals' if s == 'instrumental' else '_vocals'}.{audio_format}"
             p.write_bytes(b"z" * 3); out[s] = p
         return out
     def update_ytdlp(self, timeout=30): self.updated += 1; return True
@@ -190,11 +189,12 @@ def test_original_wav_with_separation_keeps_wav(q, tmp_path):
     assert (tmp_path / "song.wav").exists()
     assert [o.filename for o in job.outputs] == ["song.wav", "song_no_vocals.wav"]
 
-def test_m4a_stems_fall_back_to_mp3(q, tmp_path):
-    job = q.add("https://youtu.be/a", {"audio": {"versions": ["original", "vocals"], "format": "m4a", "model": "htdemucs"}}, filename="song")
+def test_m4a_stems_stay_m4a(q, tmp_path):
+    job = q.add("https://youtu.be/a", {"audio": {"versions": ["original", "vocals"], "format": "m4a", "bitrate": 320, "model": "htdemucs"}}, filename="song")
     run_until_idle(q)
-    assert [o.filename for o in job.outputs] == ["song.m4a", "song_vocals.mp3"]
-    assert q.backend.calls[-1][1] == "htdemucs"
+    assert [o.filename for o in job.outputs] == ["song.m4a", "song_vocals.m4a"]
+    assert [o.ext for o in job.outputs] == ["m4a", "m4a"]
+    assert q.backend.calls[-1] == ("separate", "htdemucs", ("vocals",), "m4a", 320)
 
 def test_audio_and_video_steps_and_output_states(q, tmp_path):
     events = q.subscribe()

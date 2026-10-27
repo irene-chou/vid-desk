@@ -18,8 +18,8 @@ ProgressCallback = Callable[[float | None], None]
 DEFAULT_OUTPUT_DIR = Path("./output")
 # 位元率只對有損格式有意義；wav / flac 不帶 -b:a
 LOSSY_FORMATS = ("mp3", "m4a")
-# demucs 的 save_audio 只會寫 mp3 / wav / flac；其他格式的分離結果退回 mp3
-STEM_FORMATS = ("mp3", "wav", "flac")
+# demucs 的 save_audio 只會直接寫 mp3 / wav / flac；其他格式（m4a）先寫暫存 wav 再用 ffmpeg 轉
+DEMUCS_FORMATS = ("mp3", "wav", "flac")
 # 分離結果的檔名尾綴
 STEM_SUFFIXES = {"instrumental": "_no_vocals", "vocals": "_vocals"}
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -210,11 +210,6 @@ def download_video(
     return output_dir / f"{filename}.mp4"
 
 
-def stem_format(audio_format: str) -> str:
-    """分離結果的實際格式：demucs 只能寫 mp3 / wav / flac，m4a 退回 mp3。"""
-    return audio_format if audio_format in STEM_FORMATS else "mp3"
-
-
 def separate(
     audio_path: Path,
     output_dir: Path,
@@ -228,6 +223,7 @@ def separate(
     """跑一次 demucs，同時寫出要求的 stems（instrumental / vocals），回傳 {stem: 路徑}。
 
     來源檔保留不刪，呼叫端決定是否還要用它當原曲輸出。
+    demucs 寫不出的格式（m4a）會先寫成暫存 wav 再用 ffmpeg 轉成目標格式；任何一步失敗都清掉暫存與半成品。
     """
     from demucs.api import Separator, save_audio
 
@@ -235,7 +231,6 @@ def separate(
         raise ValueError(f"未知的分離模型：{model}")
     if not stems or any(s not in STEM_SUFFIXES for s in stems):
         raise ValueError(f"未知的分離輸出：{stems}")
-    fmt = stem_format(audio_format)
 
     def callback(d: dict) -> None:
         # htdemucs_ft 是 4 個模型的 bag：每個模型都從 0 跑到 audio_length，要合成整體進度
@@ -251,16 +246,29 @@ def separate(
     safe_path = audio_path.parent / f"{uuid.uuid4().hex[:8]}{audio_path.suffix}"
     audio_path.rename(safe_path)
 
-    targets = {s: output_dir / f"{original_stem}{STEM_SUFFIXES[s]}.{fmt}" for s in stems}
+    targets = {s: output_dir / f"{original_stem}{STEM_SUFFIXES[s]}.{audio_format}" for s in stems}
+    # demucs 寫不出的格式先落到暫存 wav（沿用亂數檔名避開使用者檔名）再轉檔
+    temps = {} if audio_format in DEMUCS_FORMATS else {
+        s: output_dir / f"{safe_path.stem}{STEM_SUFFIXES[s]}.wav" for s in stems}
+
+    def write(stem: str, wav) -> None:
+        if stem not in temps:
+            save_audio(wav, str(targets[stem]), samplerate=separator.samplerate, bitrate=bitrate)
+            return
+        save_audio(wav, str(temps[stem]), samplerate=separator.samplerate)
+        convert_audio(temps[stem], targets[stem], audio_format, bitrate)
+        temps[stem].unlink()
+
     try:
         separator = Separator(model=model, callback=callback)
         _, sources = separator.separate_audio_file(safe_path)
         if "instrumental" in targets:
-            no_vocals = sources["drums"] + sources["bass"] + sources["other"]
-            save_audio(no_vocals, str(targets["instrumental"]), samplerate=separator.samplerate, bitrate=bitrate)
+            write("instrumental", sources["drums"] + sources["bass"] + sources["other"])
         if "vocals" in targets:
-            save_audio(sources["vocals"], str(targets["vocals"]), samplerate=separator.samplerate, bitrate=bitrate)
+            write("vocals", sources["vocals"])
     except Exception as e:
+        for p in (*temps.values(), *targets.values()):
+            p.unlink(missing_ok=True)
         raise translate(e) from e
     finally:
         safe_path.rename(audio_path)

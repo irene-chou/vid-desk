@@ -157,11 +157,6 @@ def test_convert_audio_builds_ffmpeg_opts(monkeypatch, tmp_path):
     assert calls[0][:2] == (str(src), str(tmp_path / "s.mp3"))
 
 
-def test_stem_format():
-    assert core.stem_format("mp3") == "mp3" and core.stem_format("flac") == "flac"
-    assert core.stem_format("wav") == "wav" and core.stem_format("m4a") == "mp3"
-
-
 class FakeSeparator:
     samplerate = 44100
     created = []
@@ -211,13 +206,52 @@ def test_separate_writes_both_stems_in_one_pass(fake_demucs, tmp_path):
     assert not any(p.name.endswith(".wav") and p != src for p in tmp_path.iterdir())
 
 
-def test_separate_defaults_and_m4a_fallback(fake_demucs, tmp_path):
+def test_separate_defaults(fake_demucs, tmp_path):
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
     out = core.separate(src, tmp_path)
     assert FakeSeparator.created == ["htdemucs_ft"] and list(out) == ["instrumental"]
     assert out["instrumental"] == tmp_path / "s_no_vocals.mp3" and fake_demucs[0][2] == 192
-    out = core.separate(src, tmp_path, stems=("vocals",), audio_format="m4a")
-    assert out["vocals"] == tmp_path / "s_vocals.mp3"
+
+
+@pytest.fixture
+def fake_convert(monkeypatch):
+    calls = []
+
+    def convert_audio(src, dst, audio_format, bitrate=192):
+        calls.append((src, dst, audio_format, bitrate, src.read_bytes()))
+        dst.write_bytes(b"m4a")
+        return dst
+
+    monkeypatch.setattr(core, "convert_audio", convert_audio)
+    return calls
+
+
+def test_separate_m4a_converts_temp_wav(fake_demucs, fake_convert, tmp_path):
+    # demucs 寫不出 m4a：先寫暫存 wav（亂數檔名，不碰使用者檔名），再用 convert_audio 轉成 .m4a，最後刪暫存
+    src = tmp_path / "測試 歌曲.wav"; src.write_bytes(b"wav")
+    out = core.separate(src, tmp_path, stems=("instrumental", "vocals"), audio_format="m4a", bitrate=320)
+    assert out == {"instrumental": tmp_path / "測試 歌曲_no_vocals.m4a", "vocals": tmp_path / "測試 歌曲_vocals.m4a"}
+    assert all(p.read_bytes() == b"m4a" for p in out.values())
+    temps = [Path(p) for _, p, _ in fake_demucs]
+    assert [t.suffix for t in temps] == [".wav", ".wav"] and [t.parent for t in temps] == [tmp_path, tmp_path]
+    assert temps[0].stem.endswith("_no_vocals") and temps[1].stem.endswith("_vocals")
+    assert not any("測試 歌曲" in t.name for t in temps)  # 暫存檔名不含使用者檔名
+    assert [(s, d, f, b, data) for s, d, f, b, data in fake_convert] == [
+        (temps[0], out["instrumental"], "m4a", 320, b"a"), (temps[1], out["vocals"], "m4a", 320, b"a")]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["測試 歌曲.wav", "測試 歌曲_no_vocals.m4a", "測試 歌曲_vocals.m4a"]
+
+
+def test_separate_m4a_convert_failure_cleans_temp_and_partial(fake_demucs, fake_convert, tmp_path, monkeypatch):
+    def broken(src, dst, audio_format, bitrate=192):
+        dst.write_bytes(b"half")
+        raise VidSnatchError("unknown", "ffmpeg 失敗", "boom")
+
+    monkeypatch.setattr(core, "convert_audio", broken)
+    src = tmp_path / "s.wav"; src.write_bytes(b"wav")
+    with pytest.raises(VidSnatchError) as ei:
+        core.separate(src, tmp_path, stems=("instrumental", "vocals"), audio_format="m4a")
+    assert ei.value.message == "ffmpeg 失敗"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["s.wav"] and src.read_bytes() == b"wav"
 
 
 def test_separate_restores_source_on_failure(fake_demucs, tmp_path, monkeypatch):
@@ -226,6 +260,19 @@ def test_separate_restores_source_on_failure(fake_demucs, tmp_path, monkeypatch)
     with pytest.raises(VidSnatchError) as ei:
         core.separate(src, tmp_path)
     assert ei.value.kind == "network" and src.exists()
+
+
+def test_separate_save_failure_removes_partial_stems(fake_demucs, tmp_path, monkeypatch):
+    import demucs.api
+    def save_audio(wav, path, samplerate, bitrate=320):
+        Path(path).write_bytes(b"a")
+        if path.endswith("_vocals.mp3"):
+            raise RuntimeError("disk full")
+    monkeypatch.setattr(demucs.api, "save_audio", save_audio)
+    src = tmp_path / "s.wav"; src.write_bytes(b"wav")
+    with pytest.raises(VidSnatchError):
+        core.separate(src, tmp_path, stems=("instrumental", "vocals"))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["s.wav"]
 
 
 def test_separate_rejects_unknown_model_or_stem(fake_demucs, tmp_path):

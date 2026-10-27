@@ -39,8 +39,8 @@ test("膠囊文字：版本名 + 尾綴 + 細項摘要；無損不顯示位元�
   assert.equal(api.outputLabel({ kind: "original", ext: "mp3" }, AUDIO), "原曲.mp3 · 192k");
   assert.equal(api.outputLabel({ kind: "instrumental", ext: "mp3" }, AUDIO), "伴奏.mp3 · 192k");
   assert.equal(api.outputLabel({ kind: "vocals", ext: "flac" }, { audio: { ...AUDIO.audio, format: "flac", bitrate: 320 } }), "人聲.flac");
-  // m4a 分離結果退回 mp3：以 output.ext 為準
-  assert.equal(api.outputLabel({ kind: "instrumental", ext: "mp3" }, { audio: { ...AUDIO.audio, format: "m4a", bitrate: 320 } }), "伴奏.mp3 · 320k");
+  // 尾綴以 output.ext 為準（m4a 分離結果也是 .m4a）
+  assert.equal(api.outputLabel({ kind: "instrumental", ext: "m4a" }, { audio: { ...AUDIO.audio, format: "m4a", bitrate: 320 } }), "伴奏.m4a · 320k");
   assert.equal(api.outputLabel({ kind: "video", ext: "mp4" }, { audio: null, video: { max_height: 1080 } }), ".mp4 · 1080p");
   assert.equal(api.outputLabel({ kind: "video", ext: "mp4" }, { audio: null, video: { max_height: null } }), ".mp4");
   assert.equal(api.outputLabel({ kind: "original", ext: "mp3" }, undefined), "原曲.mp3");
