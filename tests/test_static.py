@@ -12,8 +12,35 @@ def test_required_ids_present():
     for i in ["urls", "paste", "out-audio", "out-video", "v-original", "v-instrumental", "v-vocals",
               "audio-adv", "audio-summary", "video-summary", "names", "names-row", "start", "start-count",
               "jobs", "jobs-empty", "jobs-done", "done-divider", "clear-done", "stat-queued", "stat-running", "stat-done", "stat-failed",
-              "settings-toggle", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall", "ask"]:
+              "settings-toggle", "settings", "settings-close", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall", "ask"]:
         assert f'id="{i}"' in HTML, i
+
+def test_settings_is_modal_dialog():
+    # #20：設定改成原生 <dialog> modal，開關不推擠版面
+    assert '<dialog id="settings" class="settings" aria-label="設定">' in HTML
+    assert '<section id="settings"' not in HTML and ".settings { grid-column" not in HTML
+    toggle = re.search(r'<button id="settings-toggle"[^>]*>', HTML).group(0)
+    assert 'aria-haspopup="dialog"' in toggle and 'aria-controls="settings"' in toggle and 'aria-expanded="false"' in toggle
+    close = re.search(r'<button id="settings-close"[^>]*>', HTML).group(0)
+    assert 'aria-label="關閉"' in close and 'title="關閉"' in close
+    # 齒輪 showModal；關閉鈕、點 backdrop 都走 dialog.close()，Esc 走原生 cancel；關閉後焦點回齒輪並同步 aria-expanded
+    assert re.search(r"function openSettings\(\)\s*\{[^}]*dialog\.showModal\(\);", HTML, re.S)
+    assert '$("settings-toggle").addEventListener("click", openSettings);' in HTML
+    assert '$("settings-close").addEventListener("click", () => $("settings").close());' in HTML
+    assert '$("settings").addEventListener("click", onSettingsBackdropClick);' in HTML
+    assert '$("settings").addEventListener("close", onSettingsClosed);' in HTML
+    assert re.search(r"function onSettingsClosed\(\)\s*\{[^}]*setAttribute\(\"aria-expanded\", \"false\"\);\s*btn\.focus\(\);", HTML, re.S)
+    assert re.search(r"function onSettingsBackdropClick\(event\)\s*\{\s*const dialog = \$\(\"settings\"\);\s*if \(event\.target !== dialog\) return;", HTML)
+    assert "function toggleSettings" not in HTML
+    # 桌面 480px 置中、窄版貼齊 16px 邊距；內容過高時 dialog 內捲、頁面不捲
+    assert re.search(r"dialog\.settings \{[^}]*width: min\(480px, calc\(100vw - 32px\)\);[^}]*max-height: calc\(100dvh - 32px\);[^}]*overflow: auto;", HTML)
+    assert re.search(r"dialog\.settings\[open\] \{ display: grid; gap: 14px;", HTML)
+    assert "html:has(dialog.settings[open]) { overflow: hidden; }" in HTML
+
+def test_advanced_notice_spaced_from_buttons():
+    # #20 追加：「進階」底下的狀態訊息與按鈕列要分開（8px，與 .row 的 margin-top 同一個間距）
+    assert ".settings details .notice { margin-top: 8px; }" in HTML
+    assert re.search(r'<details>\s*<summary>進階.*?</summary>\s*<div class="row">.*?</div>\s*<div id="advanced-notice" class="notice" hidden></div>\s*</details>', HTML, re.S)
 
 def test_no_native_dialogs_and_no_external_scripts():
     assert not re.search(r"\b(alert|confirm|prompt)\(", HTML)
