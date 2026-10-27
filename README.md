@@ -50,7 +50,7 @@
 按「⚙ 設定」→「更換資料夾」。下次啟動才會生效。
 
 **怎麼更新？**
-每次啟動都會自動檢查更新。想立刻更新，按「⚙ 設定」→「進階」→「更新 vid-snatch」。
+每次啟動都會自動檢查有沒有新版本，有的話自動換上。想立刻更新，按「⚙ 設定」→「進階」→「更新 vid-snatch」。
 
 **怎麼移除？**
 按「⚙ 設定」→「進階」→「解除安裝」，再選要不要一併刪除下載檔案。vid-snatch 安裝的所有東西都在 `%LOCALAPPDATA%\vid-snatch`，會一併刪除。選刪除下載檔案時，只有預設的資料夾會被刪；改過儲存位置的話，請自己刪除。最後再刪掉你解壓縮的 vid-snatch 資料夾即可。
@@ -103,7 +103,7 @@ vid-snatch 會自動更新下載工具再試一次，不用處理。
 按「⚙ 設定」→「更換資料夾」。下次啟動才會生效。
 
 **怎麼更新？**
-每次啟動都會自動檢查更新。想立刻更新，按「⚙ 設定」→「進階」→「更新 vid-snatch」。
+每次啟動都會自動檢查有沒有新版本，有的話自動換上。想立刻更新，按「⚙ 設定」→「進階」→「更新 vid-snatch」。
 
 **怎麼移除？**
 按「⚙ 設定」→「進階」→「解除安裝」，再選要不要一併刪除下載檔案。會刪除 vid-snatch 的 Docker 映像檔和設定檔。選刪除下載檔案時，只有預設的資料夾會被刪；改過儲存位置的話，請自己刪除。最後再刪掉你解壓縮的 vid-snatch 資料夾即可。不再需要 Docker 的話，可以另外移除 Docker Desktop。
@@ -153,20 +153,29 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 
 ### Windows 原生執行
 
-Windows 不使用 Docker。`vid-snatch-Windows.bat` 呼叫 `windows/launcher.ps1`，每次啟動從 GitHub `latest` 標籤取得最新原始碼，再執行其中的 `vid-snatch.ps1`。後者用 uv 在 `%LOCALAPPDATA%\vid-snatch` 裡安裝 Python、套件、ffmpeg、deno 與去人聲模型。
+Windows 不使用 Docker。`vid-snatch-Windows.bat` 呼叫 `windows/launcher.ps1`，每次啟動查 GitHub 最新 release（`releases/latest` 的 `tag_name`），有新版就下載該標籤的原始碼到 `%LOCALAPPDATA%\vid-snatch\app`，再執行其中的 `vid-snatch.ps1`。後者用 uv 在 `%LOCALAPPDATA%\vid-snatch` 裡安裝 Python、套件、ffmpeg、deno 與去人聲模型。
 
-- `launcher.ps1` 發出後就無法再更新，修改前請先讀 `vid-snatch.ps1` 開頭的約定。
+- `launcher.ps1` 發出後就無法再更新，修改前請先讀 `vid-snatch.ps1` 開頭的約定。舊版啟動器查的是 git 標籤 `latest` 指到的 commit，發版時 `release.yml` 仍會把這個標籤移到新版本，所以舊版也只在發版時更新。
 - 開發時設 `VS_SOURCE=local`，會直接使用本機的原始碼，不從 GitHub 下載。
-- `.github/workflows/windows.yml` 在 Windows 上跑 `windows/ci-smoke.ps1`，涵蓋首次安裝、更新、離線、修復與解除安裝。
+- `.github/workflows/windows.yml` 在 Windows 上跑 `windows/ci-smoke.ps1`，涵蓋首次安裝、更新、離線、修復與解除安裝；「更新」情境用本機 http.server 假冒 `releases/latest`，讓啟動器下載 PR 那個 commit 的封存檔。
 
-### 下載包
+### 發版
 
-推送到 `main` 時，GitHub Actions 會用 `scripts/build-package.sh` 產生 `vid-snatch.zip`，發佈到 `latest` Release。
+把 `pyproject.toml` 與 `vid_snatch/__init__.py` 的版本號改好、合併到 `main` 後，推一個 `v` 開頭且與版本號一致的標籤：
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+GitHub Actions 會：
+
+- `release.yml`：用 `scripts/build-package.sh` 產生 `vid-snatch.zip`，建立同名 release 並標記為 latest（README 的 `releases/latest/download/vid-snatch.zip` 因此永遠指到最新版），再把 git 標籤 `latest` 移到這個版本給舊版 Windows 啟動器用。
+- `publish.yml`：發佈 amd64 與 arm64 映像檔到 GHCR，標籤為版本號（例如 `0.3.0`）與 `latest`。
+
+平常推送到 `main` 不會發版，使用者端也不會更新。
 
 ### 預建映像檔
 
-推送到 `main` 時，GitHub Actions 會發佈 amd64 與 arm64 映像檔：
-
 ```bash
-docker pull ghcr.io/irene-chou/vid-snatch:latest
+docker pull ghcr.io/irene-chou/vid-snatch:latest   # 或 :0.3.0
 ```
