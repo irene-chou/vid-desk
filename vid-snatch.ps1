@@ -26,7 +26,7 @@ $VenvDir = Join-Path $Root 'venv'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
 $VenvExe = Join-Path $VenvDir 'Scripts\vid-snatch.exe'
 $TorchDir = Join-Path $Root 'torch'
-$ModelFile = Join-Path $TorchDir 'hub\checkpoints\955717e8-8726e21a.th'
+$ModelDir = Join-Path $TorchDir 'hub\checkpoints'
 $StateDir = Join-Path $Root 'state'
 $CommitMarker = Join-Path $StateDir 'installed-commit'
 $LogDir = Join-Path $Root 'logs'
@@ -81,7 +81,9 @@ function Wait-AnyKey([string]$msg) {
 $UvUrl = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
 $DenoUrl = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
 $FfmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
-$ModelUrl = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th'
+$ModelBaseUrl = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/'
+# htdemucs_ft 由 4 個模型組成（清單見 demucs 套件內的 remote/htdemucs_ft.yaml）
+$ModelFiles = @('f7e0c4bc-ba3fe64a.th', 'd12395a8-e57c48e6.th', '92cfc3b6-ef3bcb9c.th', '04573f0d-f3cf25b2.th')
 $RetryHint = '請確認網路連線後重新雙擊 vid-snatch-Windows.bat'
 
 function Remove-IfExists([string]$path) {
@@ -226,8 +228,12 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         }
     }
 
-    if (-not (Test-Path -LiteralPath $ModelFile)) {
-        Save-Download $ModelUrl $ModelFile '去人聲模型（約 80 MB）'
+    for ($i = 0; $i -lt $ModelFiles.Count; $i++) {
+        $name = $ModelFiles[$i]
+        $dest = Join-Path $ModelDir $name
+        if (-not (Test-Path -LiteralPath $dest)) {
+            Save-Download ($ModelBaseUrl + $name) $dest "去人聲模型 $($i + 1)/$($ModelFiles.Count)（共約 320 MB）"
+        }
     }
 }
 

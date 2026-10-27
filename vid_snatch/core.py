@@ -15,7 +15,7 @@ from vid_snatch.errors import VidSnatchError, translate
 ProgressCallback = Callable[[float | None], None]
 
 DEFAULT_OUTPUT_DIR = Path("./output")
-DEMUCS_MODEL = "htdemucs"
+DEMUCS_MODEL = "htdemucs_ft"  # fine-tuned: best quality, ~4x slower than htdemucs
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 YOUTUBE_PATTERNS = [

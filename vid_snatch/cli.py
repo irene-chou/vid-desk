@@ -86,7 +86,7 @@ def run(args) -> None:
             args.url, args.output, filename, audio_format="wav", on_progress=print_progress,
         )
         print(f"\nDownloaded: {audio_path}")
-        print("Separating vocals (first run downloads the model, ~80MB)...")
+        print("Separating vocals (first run downloads the model, ~320MB)...")
         result_path = remove_vocals(audio_path, args.output, on_progress=print_progress)
         print(f"\nInstrumental saved: {result_path}")
     else:

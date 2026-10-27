@@ -19,10 +19,16 @@ RUN apt-get update && \
     apt-get purge -y --auto-remove build-essential cmake && \
     rm -rf /var/lib/apt/lists/* /root/.cache /root/.cargo /root/.rustup
 
-# 預載 Demucs htdemucs 模型，第一次去人聲不必等下載
+# 預載 Demucs htdemucs_ft 模型（4 個檔案，約 320 MB），第一次去人聲不必等下載
 RUN mkdir -p /root/.cache/torch/hub/checkpoints && \
-    curl -fsSL -o /root/.cache/torch/hub/checkpoints/955717e8-8726e21a.th \
-        https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th
+    curl -fsSL -o /root/.cache/torch/hub/checkpoints/f7e0c4bc-ba3fe64a.th \
+        https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/f7e0c4bc-ba3fe64a.th && \
+    curl -fsSL -o /root/.cache/torch/hub/checkpoints/d12395a8-e57c48e6.th \
+        https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/d12395a8-e57c48e6.th && \
+    curl -fsSL -o /root/.cache/torch/hub/checkpoints/92cfc3b6-ef3bcb9c.th \
+        https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/92cfc3b6-ef3bcb9c.th && \
+    curl -fsSL -o /root/.cache/torch/hub/checkpoints/04573f0d-f3cf25b2.th \
+        https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th
 
 # 再複製程式碼（改程式碼不會重新下載依賴）
 COPY vid_snatch/ ./vid_snatch/

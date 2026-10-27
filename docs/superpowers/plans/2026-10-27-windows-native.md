@@ -22,7 +22,7 @@
   python\                  UV_PYTHON_INSTALL_DIR
   cache\                   UV_CACHE_DIR
   venv\                    uv venv --seed（含 pip，core.update_ytdlp 需要）
-  torch\hub\checkpoints\955717e8-8726e21a.th    TORCH_HOME = $Root\torch
+  torch\hub\checkpoints\<htdemucs_ft 的 4 個 .th>    TORCH_HOME = $Root\torch
   config\config            output_dir=...（格式同 vid_snatch/config.py）
   state\installed-commit   venv 內 vid-snatch 套件對應的 commit
   logs\server.log          伺服器 stdout/stderr
@@ -36,7 +36,7 @@
   - uv：`https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip`
   - deno：`https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip`
   - ffmpeg：`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip`（取 `bin\ffmpeg.exe`、`bin\ffprobe.exe`）
-  - Demucs 模型：`https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th`
+  - Demucs htdemucs_ft 模型（4 個檔案）：`https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/` 底下的 `f7e0c4bc-ba3fe64a.th`、`d12395a8-e57c48e6.th`、`92cfc3b6-ef3bcb9c.th`、`04573f0d-f3cf25b2.th`
 - 所有下載先寫到 `<目標>.part`，完成後才改名，確保中斷後不會留下看似完整的檔案。
 - 使用者看到的文字一律繁體中文；失敗時保留視窗（主腳本 `exit 1`，由 `.bat` 的 `if errorlevel 1 pause` 停住）。
 - 測試與開發用環境變數（使用者不會設）：`VS_NO_BROWSER=1`（只印網址，既有）、`VS_SOURCE=local`（不查 GitHub，直接用解壓資料夾的原始碼）、`VS_UPDATE_API`（覆寫查最新 commit 的網址，CI 用來模擬離線）。
@@ -127,7 +127,7 @@ def test_run_web_defaults_to_all_interfaces(monkeypatch, tmp_path):
   - `-Upgrade` → `uv pip install --python <venv python> --upgrade "<PSScriptRoot>"`。
   - 成功後才寫 `state\installed-commit`；失敗印中文說明並 `exit 1`（下次會因為 marker 不符而重試）。
   - 若安裝失敗原因是某依賴沒有 Windows wheel 而需要編譯，**不要**加裝編譯工具；在報告中標明是哪個套件，交由控制者處理。
-- [ ] **Step 6: 模型** — 模型檔不存在時用 `Save-Download` 下載（標籤「去人聲模型（約 80 MB）」）。
+- [ ] **Step 6: 模型** — 4 個模型檔逐一檢查，不存在的用 `Save-Download` 下載（標籤「去人聲模型 n/4（共約 320 MB）」）。
 - [ ] **Step 7: 語法與 BOM 檢查** — 同 Task 2 Step 4 的方式。
 - [ ] **Step 8: Commit** — `feat: Windows 主腳本改用 uv 原生安裝`
 
