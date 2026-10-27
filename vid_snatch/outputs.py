@@ -113,9 +113,7 @@ class OutputOptions:
     def ext(self, kind: str) -> str:
         if kind == "video":
             return "mp4"
-        if kind == "original":
-            return self.audio.format
-        return core.stem_format(self.audio.format)
+        return self.audio.format
 
     def filename(self, name: str, kind: str) -> str:
         suffix = core.STEM_SUFFIXES.get(kind, "")

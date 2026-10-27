@@ -57,7 +57,7 @@
 
 實作細節（#11 定案）：
 
-- 膠囊文字：音檔 `原曲.mp3 · 192k`（WAV / FLAC 不顯示位元率；`ext` 以 `output.ext` 為準，m4a 分離結果會是 `.mp3`），影片 `.mp4 · 1080p`（最佳畫質只有 `.mp4`）。膠囊狀態圖示只在工作執行中、完成或失敗時顯示；排隊中與已取消的卡片不顯示（全是時鐘沒有資訊）。
+- 膠囊文字：音檔 `原曲.mp3 · 192k`（WAV / FLAC 不顯示位元率；`ext` 以 `output.ext` 為準，與 `format` 相同），影片 `.mp4 · 1080p`（最佳畫質只有 `.mp4`）。膠囊狀態圖示只在工作執行中、完成或失敗時顯示；排隊中與已取消的卡片不顯示（全是時鐘沒有資訊）。
 - 細節列的「已存檔名與大小」每個完成的輸出一列（失敗工作裡已完成的輸出也列）。
 - 耗時：收到 job 時記下 `elapsed_seconds` / `eta_seconds` 與本機時刻，之後前端每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 `started_at`（避免時鐘差）。預估總時 = 收到時的已耗時 + `eta_seconds`，下一則 SSE 前不會往下掉；已耗時超過預估就顯示相同數字。頁面上沒有進行中的卡片時計時器停掉。
 - 分組：`#jobs`（進行中與排隊）與 `#jobs-done`（已完成）兩個 `ul`；工作變成 `done` / `failed` / `cancelled` 時卡片搬到已完成區最上面。「清除已完成」只在前端隱藏（記住 id，SSE 重連重播時不畫回來），後端不刪。
@@ -119,7 +119,7 @@
 - `outputs` 整批共用。`audio` / `video` 任一可為 `null` 或省略，但不能兩個都沒有（400「至少要選一種輸出」）。`audio.versions` 至少一個（400「音檔至少要勾一個版本」）；重複會去掉，順序一律整理成 原曲 → 伴奏 → 人聲。`format` / `bitrate` / `model` / `max_height` 省略時用上表預設（不是設定檔的值；前端要自己把 `GET /api/settings` 讀到的細項填進來）。
 - `filenames` / `overwrites` 與 `urls` 等長（可省略；單一網址也可用舊的 `filename` / `overwrite`）。空字串檔名視為「用原標題」。
 - 回應 `{"jobs": [job, …]}`，job 結構見下。
-- 檔名規則：原曲 `<name>.<format>`、伴奏 `<name>_no_vocals.<ext>`、人聲 `<name>_vocals.<ext>`、影片 `<name>.mp4`。分離結果的 `ext` 與 `format` 相同，但 demucs 只能寫 mp3 / wav / flac，`m4a` 時分離結果退回 `mp3`（`output.ext` 會如實回報）。
+- 檔名規則：原曲 `<name>.<format>`、伴奏 `<name>_no_vocals.<ext>`、人聲 `<name>_vocals.<ext>`、影片 `<name>.mp4`。分離結果的 `ext` 與 `format` 相同；demucs 只能直接寫 mp3 / wav / flac，`m4a` 時後端先寫暫存 wav 再用 ffmpeg 轉成 `.m4a`（位元率照設定），暫存檔處理完即刪除。
 - 執行順序：取得資訊 → 下載音訊一次（需分離時下載 wav，否則直接下載目標格式）→ 轉檔（原曲）→ 分離（一次 demucs 同時產出伴奏與人聲）→ 下載影片 → 合併。過程中的 `<name>.wav` 會刪掉，除非原曲格式就是 wav。
 
 ### `GET /api/exists`

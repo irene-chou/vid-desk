@@ -38,10 +38,11 @@ def test_target_names_and_steps():
     assert only_original.target_names("s") == ["s.mp3"] and not only_original.needs_separation
 
 
-def test_m4a_stems_use_mp3():
-    o = OutputOptions.from_dict({"audio": {"versions": ["instrumental"], "format": "m4a"}})
-    assert o.filename("s", "instrumental") == "s_no_vocals.mp3"
-    assert o.target_names("s") == ["s_no_vocals.mp3", "s.wav"]
+def test_m4a_stems_keep_m4a():
+    o = OutputOptions.from_dict({"audio": {"versions": ["original", "instrumental"], "format": "m4a"}})
+    assert o.filename("s", "instrumental") == "s_no_vocals.m4a"
+    assert [x.ext for x in o.outputs()] == ["m4a", "m4a"]
+    assert o.target_names("s") == ["s.m4a", "s_no_vocals.m4a", "s.wav"]
 
 
 def test_constants():

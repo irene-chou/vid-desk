@@ -144,6 +144,8 @@ def test_exists_with_outputs(env, tmp_path):
     assert r == {"exists": True, "suggestion": "song (1)", "files": ["song (1).mp3", "song (1)_vocals.mp3"]}
     r = c.get("/api/exists", params={"filename": "song", "versions": "original", "format": "flac", "video": "true"}).json()
     assert r == {"exists": False, "suggestion": "song", "files": ["song.flac", "song.mp4"]}
+    r = c.get("/api/exists", params={"filename": "song", "versions": "original,instrumental,vocals", "format": "m4a"}).json()
+    assert r["files"] == ["song.m4a", "song_no_vocals.m4a", "song_vocals.m4a"]  # 分離結果不再退回 mp3
     r = c.get("/api/exists", params={"filename": "song", "video": "true"}).json()
     assert r["files"] == ["song.mp4"]
     assert c.get("/api/exists", params={"filename": "song"}).status_code == 400
