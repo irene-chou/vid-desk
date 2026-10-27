@@ -4,13 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vid-snatch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Download YouTube audio/video and optionally remove vocals"
 requires-python = ">=3.10"
 dependencies = [
     "yt-dlp>=2024.0.0",
-    "demucs>=4.0.0",
+    # 4.1 起才有 demucs.api，且模型改從 Hugging Face Hub 讀（見 vid_snatch/models.py）
+    "demucs>=4.1.0",
+    "huggingface-hub",
+    "pyyaml",
+    # demucs 執行時需要，但沒有列在它自己的依賴裡
+    "numpy",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sse-starlette>=2.0",
 ]
 
 [project.scripts]
-vid-snatch = "vid_snatch:main"
+vid-snatch = "vid_snatch.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["vid_snatch*"]
+
+[tool.setuptools.package-data]
+vid_snatch = ["static/*.html"]

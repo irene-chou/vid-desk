@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vid-snatch</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f4;
+    --surface: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6b6b70;
+    --border: #dcdcd8;
+    --accent: #2f6fde;
+    --accent-text: #ffffff;
+    --danger: #c62828;
+    --ok: #2e7d32;
+    --track: #e7e7e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618;
+      --surface: #212124;
+      --text: #ececee;
+      --muted: #a0a0a6;
+      --border: #3a3a3f;
+      --accent: #5b8ff0;
+      --accent-text: #0e0e10;
+      --danger: #ef6b6b;
+      --ok: #6cc070;
+      --track: #34343a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  button {
+    font: inherit;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  textarea, input[type="text"] {
+    width: 100%;
+    font: inherit;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .modes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .modes label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .hint { color: var(--muted); font-size: 0.85rem; }
+  .field-label { display: block; margin: 12px 0 4px; }
+  #names { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .name-url { color: var(--muted); font-size: 0.8rem; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .errors { color: var(--danger); margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  .errors:empty { display: none; }
+  .form-error { color: var(--danger); margin-top: 8px; }
+  .form-error:empty { display: none; }
+  #start { width: 100%; margin-top: 16px; padding: 12px; }
+  [hidden] { display: none !important; }
+
+  #jobs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .card-head { display: flex; gap: 8px; align-items: baseline; }
+  .card-icon { flex: none; width: 1.4em; text-align: center; }
+  .card-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+  .card.done .card-icon { color: var(--ok); }
+  .card.failed .card-icon { color: var(--danger); }
+  .card-step { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+  .card progress { width: 100%; height: 8px; margin-top: 6px; accent-color: var(--accent); }
+  .card-message { color: var(--danger); margin-top: 6px; }
+  .card details { margin-top: 4px; font-size: 0.9rem; }
+  .card pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); margin: 6px 0 0; }
+  .card .row { margin-top: 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 12px; }
+
+  #settings h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  #output-dir { overflow-wrap: anywhere; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9rem; }
+  .notice { color: var(--ok); }
+  #settings details { margin-top: 16px; }
+  #settings summary { cursor: pointer; color: var(--muted); }
+
+  dialog {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 20px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+  dialog p { margin: 0 0 16px; font-weight: 600; }
+  .dialog-buttons { display: flex; flex-direction: column; gap: 8px; }
+  .ended { text-align: center; padding: 80px 16px; font-size: 1.2rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>vid-snatch</h1>
+    <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">⚙ 設定</button>
+  </header>
+
+  <section id="settings" class="panel" hidden>
+    <h2>設定</h2>
+    <div>下載資料夾：</div>
+    <div id="output-dir">讀取中…</div>
+    <div id="folder-notice" class="notice" hidden>已更新，下次啟動生效</div>
+    <div class="row">
+      <button id="pick-folder" type="button">更換資料夾</button>
+      <button id="shutdown" type="button">結束 vid-snatch</button>
+    </div>
+    <details>
+      <summary>進階</summary>
+      <div class="row">
+        <button id="rebuild" type="button">更新 vid-snatch</button>
+        <button id="uninstall" type="button" class="danger">解除安裝</button>
+      </div>
+      <div id="advanced-notice" class="notice" hidden></div>
+    </details>
+  </section>
+
+  <section class="panel">
+    <textarea id="urls" placeholder="貼上 YouTube 網址（一行一個）" aria-label="YouTube 網址"></textarea>
+    <ul id="url-errors" class="errors"></ul>
+    <div class="row">
+      <button id="paste" type="button">貼上</button>
+    </div>
+
+    <div class="modes" role="radiogroup" aria-label="下載格式">
+      <label><input type="radio" name="mode" id="mode-mp3" value="mp3" checked> 音檔 MP3</label>
+      <label><input type="radio" name="mode" id="mode-no_vocals" value="no_vocals"> 去人聲 MP3 <span class="hint">約 3–8 分鐘</span></label>
+      <label><input type="radio" name="mode" id="mode-mp4" value="mp4"> 影片 MP4</label>
+    </div>
+
+    <div id="names-row" hidden>
+      <div class="field-label">檔名（可直接修改）</div>
+      <ul id="names"></ul>
+    </div>
+
+    <button id="start" type="button" class="primary" disabled>開始</button>
+    <div id="form-error" class="form-error"></div>
+  </section>
+
+  <ul id="jobs"></ul>
+  <div id="jobs-empty" class="empty">還沒有下載工作</div>
+</main>
+
+<dialog id="ask">
+  <p id="ask-title"></p>
+  <div id="ask-buttons" class="dialog-buttons"></div>
+</dialog>
+
+<script>
+"use strict";
+
+const URL_RE = /youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/|music\.youtube\.com\/watch\?/;
+const STATE_ICONS = { queued: "⏳", running: "▶", done: "✓", failed: "✗" };
+
+const $ = (id) => document.getElementById(id);
+const urlsEl = $("urls");
+const startEl = $("start");
+const jobsEl = $("jobs");
+
+// 每個網址的標題狀態：{ status: "loading" | "ok" | "failed", value, touched, input }
+const titles = new Map();
+const TITLE_CONCURRENCY = 3;
+let titleQueue = [];
+let titleActive = 0;
+let infoTimer = null;
+let shownUrls = [];
+let submitting = false;
+const cards = new Map();
+
+// ---------- HTTP ----------
+
+async function readError(res) {
+  try {
+    const body = await res.json();
+    if (body && typeof body.message === "string" && body.message) return body.message;
+  } catch (e) { /* 非 JSON 回應 */ }
+  return "發生錯誤";
+}
+
+// fetch 本身失敗（伺服器關閉、斷線）時丟出的是英文 TypeError，統一改成中文
+async function getJson(path) {
+  let res;
+  try {
+    res = await fetch(path);
+  } catch (e) {
+    throw new Error("發生錯誤");
+  }
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+async function postJson(path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Vid-Snatch": "1" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error("發生錯誤");
+  }
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+// ---------- 頁內對話框 ----------
+
+function ask(title, choices) {
+  const dialog = $("ask");
+  $("ask-title").textContent = title;
+  const box = $("ask-buttons");
+  box.replaceChildren();
+  return new Promise((resolve) => {
+    let chosen = null;
+    for (const choice of choices) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = choice.label;
+      if (choice.className) btn.className = choice.className;
+      btn.addEventListener("click", () => { chosen = choice.value; dialog.close(); });
+      box.append(btn);
+    }
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => dialog.close());
+    box.append(cancel);
+    dialog.addEventListener("close", () => resolve(chosen), { once: true });
+    dialog.showModal();
+  });
+}
+
+// ---------- 網址輸入 ----------
+
+function readLines() {
+  const valid = [];
+  const bad = [];
+  urlsEl.value.split("\n").forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) return;
+    if (!URL_RE.test(line)) bad.push(index + 1);
+    else if (!valid.includes(line)) valid.push(line);
+  });
+  return { valid, bad };
+}
+
+function refreshForm() {
+  const { valid, bad } = readLines();
+  const errorsEl = $("url-errors");
+  errorsEl.replaceChildren(...bad.map((n) => {
+    const li = document.createElement("li");
+    li.textContent = `第 ${n} 行不是 YouTube 網址`;
+    return li;
+  }));
+  const loading = valid.some((u) => {
+    const status = titles.get(u)?.status;
+    return status === undefined || status === "loading";
+  });
+  startEl.disabled = submitting || loading || valid.length === 0 || bad.length > 0;
+  if (!submitting) startEl.textContent = loading ? "讀取影片標題中…" : "開始";
+  return { valid, bad };
+}
+
+// ---------- 檔名清單 ----------
+
+function renderNames(urls) {
+  const same = urls.length === shownUrls.length && urls.every((u, i) => u === shownUrls[i]);
+  if (same) return;
+  shownUrls = urls;
+  const list = $("names");
+  list.replaceChildren(...urls.map((url) => {
+    const entry = titles.get(url);
+    const li = document.createElement("li");
+    const label = document.createElement("div");
+    label.className = "name-url";
+    label.textContent = url;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", `${url} 的檔名`);
+    input.value = entry.value;
+    input.disabled = submitting;
+    input.addEventListener("input", () => { entry.value = input.value; entry.touched = true; });
+    entry.input = input;
+    updatePlaceholder(entry);
+    li.append(label, input);
+    return li;
+  }));
+  $("names-row").hidden = urls.length === 0;
+}
+
+function updatePlaceholder(entry) {
+  if (!entry.input) return;
+  entry.input.placeholder = {
+    loading: "讀取影片標題中…",
+    ok: "",
+    failed: "讀不到標題，可自己輸入檔名",
+  }[entry.status];
+}
+
+function queueTitles(urls) {
+  for (const url of urls) {
+    if (titles.has(url)) continue;
+    titles.set(url, { status: "loading", value: "", touched: false, input: null });
+    titleQueue.push(url);
+  }
+  pumpTitles();
+}
+
+function pumpTitles() {
+  while (titleActive < TITLE_CONCURRENCY && titleQueue.length) {
+    const url = titleQueue.shift();
+    titleActive += 1;
+    fetchTitle(url).finally(() => { titleActive -= 1; pumpTitles(); });
+  }
+}
+
+async function fetchTitle(url) {
+  const entry = titles.get(url);
+  try {
+    const data = await getJson(`/api/info?url=${encodeURIComponent(url)}`);
+    entry.status = "ok";
+    if (!entry.touched) {
+      entry.value = data.title || "";
+      if (entry.input) entry.input.value = entry.value;
+    }
+  } catch (e) {
+    // 取不到標題不影響下載，使用者仍可自己填檔名
+    entry.status = "failed";
+  }
+  updatePlaceholder(entry);
+  refreshForm();
+}
+
+function onUrlsInput() {
+  $("form-error").textContent = "";
+  clearTimeout(infoTimer);
+  // 打字中先擋住「開始」，停 500ms 後再讀標題、列檔名
+  startEl.disabled = true;
+  infoTimer = setTimeout(() => {
+    const { valid } = readLines();
+    queueTitles(valid);
+    renderNames(valid);
+    refreshForm();
+  }, 500);
+}
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) return;
+    const current = urlsEl.value;
+    urlsEl.value = current && !current.endsWith("\n") ? `${current}\n${text}` : current + text;
+    onUrlsInput();
+  } catch (e) {
+    // 沒有剪貼簿權限或非 secure context：靜默忽略
+  }
+}
+
+// ---------- 開始下載 ----------
+
+function selectedMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function setSubmitting(value) {
+  submitting = value;
+  urlsEl.disabled = value;
+  for (const entry of titles.values()) if (entry.input) entry.input.disabled = value;
+  $("paste").disabled = value;
+  startEl.textContent = value ? "處理中…" : "開始";
+  refreshForm();
+}
+
+async function resolveOverwrite(mode, filename) {
+  if (!filename) return { filename, overwrite: false };
+  const query = `filename=${encodeURIComponent(filename)}&mode=${encodeURIComponent(mode)}`;
+  const check = await getJson(`/api/exists?${query}`);
+  if (!check.exists) return { filename, overwrite: false };
+  const choice = await ask(`已有同名檔案「${filename}」`, [
+    { label: "覆蓋", value: "overwrite", className: "primary" },
+    { label: `另存為 ${check.suggestion}`, value: "rename" },
+  ]);
+  if (choice === "overwrite") return { filename, overwrite: true };
+  if (choice === "rename") return { filename: check.suggestion, overwrite: false };
+  return null;
+}
+
+async function startJobs() {
+  const { valid, bad } = readLines();
+  if (valid.length === 0 || bad.length > 0) return;
+  if (startEl.disabled) return;
+  const mode = selectedMode();
+  $("form-error").textContent = "";
+  setSubmitting(true);
+  try {
+    const filenames = [];
+    const overwrites = [];
+    for (const url of valid) {
+      const decision = await resolveOverwrite(mode, titles.get(url).value.trim());
+      if (decision === null) return;
+      filenames.push(decision.filename || null);
+      overwrites.push(decision.overwrite);
+    }
+    const data = await postJson("/api/jobs", { urls: valid, mode, filenames, overwrites });
+    (data.jobs || []).forEach(renderIfNew);
+    urlsEl.value = "";
+    titles.clear();
+    renderNames([]);
+  } catch (e) {
+    $("form-error").textContent = e.message || "發生錯誤";
+  } finally {
+    setSubmitting(false);
+  }
+}
+
+// ---------- 工作卡片 ----------
+
+function makeButton(label, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function cardActionError(card, message) {
+  let el = card.querySelector(".card-action-error");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "card-message card-action-error";
+    card.append(el);
+  }
+  el.textContent = message;
+}
+
+function buildCardBody(job, card) {
+  const parts = [];
+
+  const head = document.createElement("div");
+  head.className = "card-head";
+  const icon = document.createElement("span");
+  icon.className = "card-icon";
+  icon.textContent = STATE_ICONS[job.state] || "";
+  const name = document.createElement("span");
+  name.className = "card-name";
+  name.textContent = job.filename || job.display_name || job.url;
+  head.append(icon, name);
+  parts.push(head);
+
+  if (job.state === "queued") {
+    const step = document.createElement("div");
+    step.className = "card-step";
+    step.textContent = "排隊中";
+    parts.push(step);
+  }
+
+  if (job.state === "running") {
+    const step = document.createElement("div");
+    step.className = "card-step";
+    step.textContent = job.step_total
+      ? `步驟 ${job.step}/${job.step_total} ${job.step_name || ""}`.trim()
+      : job.step_name || "處理中";
+    const bar = document.createElement("progress");
+    bar.max = 100;
+    if (typeof job.percent === "number") bar.value = job.percent;
+    else bar.removeAttribute("value");
+    parts.push(step, bar);
+  }
+
+  if (job.state === "done") {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.append(makeButton("顯示檔案", async () => {
+      try { await postJson(`/api/jobs/${job.id}/reveal`); }
+      catch (e) { cardActionError(card, e.message || "發生錯誤"); }
+    }));
+    parts.push(row);
+  }
+
+  if (job.state === "failed") {
+    const message = document.createElement("div");
+    message.className = "card-message";
+    message.textContent = job.message || "發生錯誤";
+    parts.push(message);
+    if (job.detail) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "查看詳情";
+      const pre = document.createElement("pre");
+      pre.textContent = job.detail;
+      details.append(summary, pre);
+      parts.push(details);
+    }
+    const row = document.createElement("div");
+    row.className = "row";
+    row.append(makeButton("重試", async (event) => {
+      event.currentTarget.disabled = true;
+      try { renderIfNew(await postJson(`/api/jobs/${job.id}/retry`)); }
+      catch (e) { cardActionError(card, e.message || "發生錯誤"); }
+    }));
+    parts.push(row);
+  }
+
+  return parts;
+}
+
+// POST 回應可能比 SSE 推來的狀態還舊；卡片已存在時以 SSE 為準
+function renderIfNew(job) {
+  if (!cards.has(job.id)) renderJob(job);
+}
+
+function renderJob(job) {
+  let card = cards.get(job.id);
+  if (!card) {
+    card = document.createElement("li");
+    cards.set(job.id, card);
+    jobsEl.prepend(card);
+  }
+  card.className = `card ${job.state}`;
+  card.replaceChildren(...buildCardBody(job, card));
+  $("jobs-empty").hidden = cards.size > 0;
+}
+
+async function loadJobs() {
+  try {
+    const data = await getJson("/api/jobs");
+    (data.jobs || []).forEach(renderJob);
+  } catch (e) { /* SSE 連上後會補齊 */ }
+}
+
+function connectEvents() {
+  const source = new EventSource("/api/events");
+  source.addEventListener("job", (event) => {
+    try { renderJob(JSON.parse(event.data)); } catch (e) { /* 忽略壞資料 */ }
+  });
+  // 斷線時瀏覽器會自動重連
+}
+
+// ---------- 設定 ----------
+
+function toggleSettings() {
+  const panel = $("settings");
+  panel.hidden = !panel.hidden;
+  $("settings-toggle").setAttribute("aria-expanded", String(!panel.hidden));
+}
+
+async function loadSettings() {
+  try {
+    const data = await getJson("/api/settings");
+    $("output-dir").textContent = data.output_dir;
+  } catch (e) {
+    $("output-dir").textContent = e.message || "發生錯誤";
+  }
+}
+
+async function pickFolder() {
+  const btn = $("pick-folder");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "選擇中…";
+  try {
+    const data = await postJson("/api/settings/pick-folder");
+    $("output-dir").textContent = data.output_dir;
+    if (data.changed) $("folder-notice").hidden = false;
+  } catch (e) {
+    showAdvancedNotice(e.message || "發生錯誤");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+function showEnded() {
+  const box = document.createElement("div");
+  box.className = "ended";
+  box.textContent = "vid-snatch 已結束，可以關閉此分頁";
+  document.body.replaceChildren(box);
+}
+
+async function shutdown() {
+  $("shutdown").disabled = true;
+  try {
+    await postJson("/api/shutdown");
+  } catch (e) {
+    // server 可能在回應前就關掉，仍視為已結束
+  }
+  showEnded();
+}
+
+function showAdvancedNotice(text) {
+  const el = $("advanced-notice");
+  el.textContent = text;
+  el.hidden = false;
+}
+
+async function rebuild() {
+  $("rebuild").disabled = true;
+  try {
+    await postJson("/api/rebuild");
+    showAdvancedNotice("更新中，瀏覽器會自動重新開啟");
+  } catch (e) {
+    $("rebuild").disabled = false;
+    showAdvancedNotice(e.message || "發生錯誤");
+  }
+}
+
+async function uninstall() {
+  const choice = await ask("是否一併刪除已下載的檔案？", [
+    { label: "刪除下載檔案並解除安裝", value: "delete", className: "danger" },
+    { label: "保留檔案並解除安裝", value: "keep" },
+  ]);
+  if (choice === null) return;
+  try {
+    await postJson("/api/uninstall", { delete_downloads: choice === "delete" });
+    showAdvancedNotice("正在解除安裝…");
+  } catch (e) {
+    showAdvancedNotice(e.message || "發生錯誤");
+  }
+}
+
+// ---------- 啟動 ----------
+
+urlsEl.addEventListener("input", onUrlsInput);
+$("paste").addEventListener("click", pasteFromClipboard);
+startEl.addEventListener("click", startJobs);
+$("settings-toggle").addEventListener("click", toggleSettings);
+$("pick-folder").addEventListener("click", pickFolder);
+$("shutdown").addEventListener("click", shutdown);
+$("rebuild").addEventListener("click", rebuild);
+$("uninstall").addEventListener("click", uninstall);
+
+refreshForm();
+loadSettings();
+loadJobs();
+connectEvents();
+</script>
+</body>
+</html>
