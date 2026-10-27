@@ -70,9 +70,112 @@
 
 保留文字的地方：選項名稱、段落標題、錯誤訊息、「開始」。
 
-## 後端需要配合的改動（另開票）
+## 後端需要配合的改動（#9，已完成）
 
 - 工作模型從單一 `mode` 改為「一個網址、多個輸出」，每個輸出有自己的狀態與結果路徑。
 - 工作事件多回傳：原標題、各輸出狀態、開始時間 / 耗時、預估剩餘、結果檔大小。
 - 細項（格式、位元率、模型、畫質）存進設定檔並能讀回。
 - 音檔 M4A/WAV/FLAC、位元率、影片畫質上限、demucs 模型切換、人聲輸出。
+
+定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` 仍要帶 `X-Vid-Snatch: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
+
+## 後端 API（#9 定案）
+
+### 列舉
+
+| 名稱 | 值 | 說明 |
+|---|---|---|
+| version / kind | `original` `instrumental` `vocals` `video` | 前三個是音檔版本（原曲 / 伴奏 / 人聲），`video` 只出現在輸出列 |
+| format | `mp3` `m4a` `wav` `flac` | 音檔格式，預設 `mp3` |
+| bitrate | `128` `192` `320` | 整數 kbps，預設 `192`；對 `wav` / `flac` 無作用 |
+| model | `htdemucs` `htdemucs_ft` | 分離模型（快速 / 高品質），預設 `htdemucs_ft`，兩個都已預載 |
+| max_height | `null` `1080` `720` | 影片畫質上限，`null` = 最佳 |
+| job.state | `queued` `running` `done` `failed` | 工作狀態（`cancelled` 保留給 #11 的取消端點） |
+| output.state | `queued` `running` `done` `failed` | 單一輸出的狀態 |
+
+### `POST /api/jobs`
+
+```json
+{
+  "urls": ["https://youtu.be/…", "…"],
+  "outputs": {
+    "audio": { "versions": ["original", "instrumental"], "format": "mp3", "bitrate": 192, "model": "htdemucs_ft" },
+    "video": { "max_height": 1080 }
+  },
+  "filenames": ["自訂檔名", null],
+  "overwrites": [false, true]
+}
+```
+
+- `outputs` 整批共用。`audio` / `video` 任一可為 `null` 或省略，但不能兩個都沒有（400「至少要選一種輸出」）。`audio.versions` 至少一個（400「音檔至少要勾一個版本」）；重複會去掉，順序一律整理成 原曲 → 伴奏 → 人聲。`format` / `bitrate` / `model` / `max_height` 省略時用上表預設（不是設定檔的值；前端要自己把 `GET /api/settings` 讀到的細項填進來）。
+- `filenames` / `overwrites` 與 `urls` 等長（可省略；單一網址也可用舊的 `filename` / `overwrite`）。空字串檔名視為「用原標題」。
+- 回應 `{"jobs": [job, …]}`，job 結構見下。
+- 檔名規則：原曲 `<name>.<format>`、伴奏 `<name>_no_vocals.<ext>`、人聲 `<name>_vocals.<ext>`、影片 `<name>.mp4`。分離結果的 `ext` 與 `format` 相同，但 demucs 只能寫 mp3 / wav / flac，`m4a` 時分離結果退回 `mp3`（`output.ext` 會如實回報）。
+- 執行順序：取得資訊 → 下載音訊一次（需分離時下載 wav，否則直接下載目標格式）→ 轉檔（原曲）→ 分離（一次 demucs 同時產出伴奏與人聲）→ 下載影片 → 合併。過程中的 `<name>.wav` 會刪掉，除非原曲格式就是 wav。
+
+### `GET /api/exists`
+
+Query：`filename`（必填）、`versions`（逗號分隔，例如 `original,instrumental`；不勾音檔就留空）、`format`（預設 `mp3`）、`video`（`true` / `false`，預設 `false`）。`versions` 與 `video` 不能都沒有（400）。
+
+```json
+{ "exists": true, "suggestion": "song (1)", "files": ["song (1).mp3", "song (1)_no_vocals.mp3"] }
+```
+
+- `exists`：以 `filename` 為主體時，任一會寫入的檔（含過程中的 `<name>.wav`）已存在。
+- `suggestion`：建議改用的檔名主體（不存在衝突時等於清理後的 `filename`）。
+- `files`：採用 `suggestion` 時會產生的檔名（含副檔名），依輸出順序。
+
+### job（`POST /api/jobs` 回應、`GET /api/jobs` 的 `jobs[]`、`/api/events` 每則 `event: job` 的 data）
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 8 碼 |
+| `url` | string | 清理後的來源網址 |
+| `filename` | string \| null | 使用者自訂的檔名主體；null 表示用原標題 |
+| `overwrite` | bool | 允許覆蓋既有檔 |
+| `options` | object | 送進來的 `outputs`，補齊預設後的樣子：`{"audio": {"versions","format","bitrate","model"} \| null, "video": {"max_height"} \| null}`，膠囊摘要（`MP3 192k`、`1080p`）由此組出 |
+| `outputs` | Output[] | 每個輸出檔一筆，順序固定 原曲 → 伴奏 → 人聲 → 影片 |
+| `steps` | string[] | 這個工作的步驟名稱，依 `options` 動態組成，例如 `["取得資訊","下載","轉檔","分離","下載影片","合併"]`（只有影片時是 `["取得資訊","下載","合併"]`） |
+| `state` | `queued` `running` `done` `failed` | 工作狀態 |
+| `step` | int | 目前（或失敗時停住、完成時最後）的步驟，1-based；排隊中為 0 |
+| `step_total` | int | `steps.length` |
+| `step_name` | string | `steps[step-1]`；排隊中為空字串。卡片狀態文字即 `` `${step}/${step_total} · ${step_name}` `` |
+| `percent` | number \| null | 目前步驟的百分比 0–100；null 表示不定進度。完成時 100 |
+| `message` | string | 失敗時的中文說明 |
+| `detail` | string | 失敗時的原始錯誤（「查看詳情」） |
+| `error_kind` | string \| null | `private` `age` `unavailable` `live` `extractor_outdated` `network` `unknown` |
+| `result_path` | string \| null | 第一個完成輸出的完整路徑（「顯示檔案」用；向下相容） |
+| `title` | string \| null | YouTube 原標題，第 1 步結束後才有（即使使用者自訂檔名也會取） |
+| `display_name` | string \| null | 實際採用的檔名主體（已處理重名後綴），第 1 步結束後才有 |
+| `queue_position` | int \| null | 排隊中的順位，1 = 下一個；非排隊狀態為 null。前面的工作開跑時，後面每張卡都會收到一則更新 |
+| `created_at` | number | 建立時間，Unix 秒 |
+| `started_at` | number \| null | 開始執行時間（Unix 秒） |
+| `finished_at` | number \| null | 完成或失敗時間（Unix 秒） |
+| `elapsed_seconds` | number \| null | 序列化當下的耗時（`(finished_at ?? now) - started_at`）；進行中請用前端計時器以 `started_at` 每秒更新，不要等 SSE |
+| `eta_seconds` | number \| null | 目前步驟預估剩餘秒數，由該步已耗時與 `percent` 推算（分離時來自 demucs callback）；沒有進度或不在執行中為 null。「預估總時」= 已耗時 + `eta_seconds` |
+
+Output：
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `kind` | `original` `instrumental` `vocals` `video` | 類型（決定圖示） |
+| `ext` | string | 實際副檔名（`mp3` `m4a` `wav` `flac` `mp4`） |
+| `state` | `queued` `running` `done` `failed` | 原曲在「下載 / 轉檔」時 running；伴奏與人聲在「分離」時同時 running；影片在「下載影片 / 合併」時 running。工作失敗時所有未完成的輸出都變 `failed` |
+| `filename` | string \| null | 檔名（含副檔名），第 1 步結束後就有 |
+| `result_path` | string \| null | 完成後的完整路徑 |
+| `size_bytes` | int \| null | 完成後的檔案大小 |
+
+SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位（含任一輸出狀態、佇列順位）變動就推一整個 job。
+
+其他端點不變：`GET /api/info?url=`、`POST /api/jobs/{id}/retry`（沿用原工作的 `options`）、`POST /api/jobs/{id}/reveal`（用 `result_path`）。取消排隊中工作的端點由 #11 新增。
+
+### `GET /api/settings` / `POST /api/settings`
+
+```json
+{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "audio_bitrate": 192, "demucs_model": "htdemucs_ft", "video_max_height": null }
+```
+
+- `GET` 回傳上述五個欄位；`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `192` / `htdemucs_ft` / `null`）補齊。
+- `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的五個欄位 + `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
+- 「版本」（原曲 / 伴奏 / 人聲）不存設定，每次載入回到預設「原曲」。
+- 設定檔 `config` 每行 `key=value`，`output_dir` 永遠在第一行；bash / bat / ps1 啟動腳本只讀那一行，其餘行會被略過。

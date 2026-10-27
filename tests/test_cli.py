@@ -16,6 +16,46 @@ def test_cli_still_requires_url_without_web(monkeypatch):
         main()
 
 
+def test_video_and_no_vocals_are_exclusive():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["https://youtu.be/a", "--video", "--no-vocals"])
+
+
+@pytest.mark.parametrize("flags,mode,expected", [
+    ([], "mp3", ["song.mp3"]),
+    (["--video"], "mp4", ["song.mp4"]),
+    (["--no-vocals"], "no_vocals", ["song_no_vocals.mp3"]),
+])
+def test_run_three_modes_use_shared_pipeline(monkeypatch, tmp_path, capsys, flags, mode, expected):
+    from tests.test_jobs import FakeBackend
+    from vid_snatch import cli
+
+    backend = FakeBackend()
+    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
+        monkeypatch.setattr(cli.core, name, getattr(backend, name))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "song")
+    args = build_parser().parse_args(["https://youtu.be/a", "-o", str(tmp_path), *flags])
+    assert cli.mode_of(args) == mode
+    cli.run(args)
+    assert sorted(p.name for p in tmp_path.iterdir()) == expected
+    out = capsys.readouterr().out
+    assert "saved:" in out and "50%" in out
+
+
+def test_run_avoids_overwriting_existing_outputs(monkeypatch, tmp_path):
+    from tests.test_jobs import FakeBackend
+    from vid_snatch import cli
+
+    backend = FakeBackend()
+    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
+        monkeypatch.setattr(cli.core, name, getattr(backend, name))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    (tmp_path / "Same Title_no_vocals.mp3").write_bytes(b"old")
+    cli.run(build_parser().parse_args(["https://youtu.be/a", "-o", str(tmp_path), "--no-vocals"]))
+    assert (tmp_path / "Same Title (1)_no_vocals.mp3").exists()
+    assert (tmp_path / "Same Title_no_vocals.mp3").read_bytes() == b"old"
+
+
 def test_run_web_reads_env_and_defaults_host_output_dir(monkeypatch, tmp_path):
     import uvicorn
 

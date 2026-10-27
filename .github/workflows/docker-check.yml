@@ -33,7 +33,7 @@ jobs:
       - name: CLI --help
         run: docker run --rm "$IMAGE" --help
 
-      - name: Remove vocals offline (synthetic 2 s WAV)
+      - name: Remove vocals offline with both models (synthetic 2 s WAV)
         run: |
           work="$RUNNER_TEMP/vocal"
           mkdir -p "$work"
@@ -41,7 +41,8 @@ jobs:
           import math, struct, sys, time, wave
           from pathlib import Path
 
-          from vid_snatch.core import remove_vocals
+          from vid_snatch.core import separate
+          from vid_snatch.models import DEMUCS_MODELS
 
           work = Path(sys.argv[1])
           src = work / "測試 歌曲.wav"
@@ -58,18 +59,29 @@ jobs:
                   frames += struct.pack("<hh", int(left * 32767), int(right * 32767))
               w.writeframes(bytes(frames))
 
-          start = time.monotonic()
-          out = remove_vocals(src, work)
-          size = out.stat().st_size if out.exists() else -1
-          print(f"remove_vocals: {out} ({size} bytes, {time.monotonic() - start:.1f} s)")
-          sys.exit(0 if size > 0 else 2)
+          # 兩個可選模型都要能離線載入；一次 demucs 同時寫出伴奏與人聲
+          failed = False
+          for model in DEMUCS_MODELS:
+              out_dir = work / model
+              out_dir.mkdir()
+              start = time.monotonic()
+              outs = separate(src, out_dir, model=model, stems=("instrumental", "vocals"))
+              for stem, path in outs.items():
+                  size = path.stat().st_size if path.exists() else -1
+                  print(f"separate[{model}] {stem}: {path} ({size} bytes, {time.monotonic() - start:.1f} s)")
+                  failed |= size <= 0
+          sys.exit(2 if failed else 0)
           EOF
-          # --network none：證明模型已預載、執行時不需要網路
+          # --network none：證明兩個模型都已預載、執行時不需要網路
           docker run --rm --network none -v "$work:/work" --entrypoint python "$IMAGE" /work/check.py /work
-          ls -l "$work"
-          f=$(find "$work" -name '*_no_vocals.mp3' -size +0c | head -n 1)
-          if [ -z "$f" ]; then echo "::error::沒有產生非空的 _no_vocals.mp3"; exit 1; fi
-          echo "OK: $f"
+          ls -lR "$work"
+          for model in htdemucs htdemucs_ft; do
+            for suffix in _no_vocals _vocals; do
+              f=$(find "$work/$model" -name "*${suffix}.mp3" -size +0c | head -n 1)
+              if [ -z "$f" ]; then echo "::error::$model 沒有產生非空的 ${suffix}.mp3"; exit 1; fi
+              echo "OK: $f"
+            done
+          done
 
       - name: Web server health
         run: |

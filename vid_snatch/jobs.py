@@ -1,19 +1,16 @@
 """單 worker 工作佇列：依序執行下載工作，並把狀態變化推給訂閱者。"""
 import queue
 import threading
-from dataclasses import asdict, dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 from uuid import uuid4
 
-from . import core, errors
+from . import core, errors, outputs
 from .errors import VidSnatchError
+from .outputs import Backend, Hooks, Output, OutputOptions
 
-MODES = {
-    "mp3": ["取得資訊", "下載", "轉檔"],
-    "mp4": ["取得資訊", "下載", "合併"],
-    "no_vocals": ["取得資訊", "下載", "轉檔", "分離人聲"],
-}
+JOB_STATES = ("queued", "running", "done", "failed")
 
 _STOP = object()
 
@@ -22,40 +19,71 @@ _STOP = object()
 class Job:
     id: str
     url: str
-    mode: str
+    options: OutputOptions
     filename: str | None
     overwrite: bool
+    outputs: list[Output] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
     state: str = "queued"
     step: int = 0
-    step_total: int = 0
     step_name: str = ""
     percent: float | None = None
     message: str = ""
     detail: str = ""
-    result_path: str | None = None
     error_kind: str | None = None
-    display_name: str | None = None
+    title: str | None = None          # YouTube 原標題
+    display_name: str | None = None   # 實際使用的檔名主體（不含副檔名）
+    queue_position: int | None = None  # 排隊中的順位（1 = 下一個），非排隊時為 None
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    eta_seconds: float | None = None
+    _step_started: float | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def step_total(self) -> int:
+        return len(self.steps)
+
+    @property
+    def result_path(self) -> str | None:
+        """第一個完成的輸出路徑（「顯示檔案」用）。"""
+        return next((o.result_path for o in self.outputs if o.state == "done" and o.result_path), None)
+
+    def elapsed_seconds(self) -> float | None:
+        if self.started_at is None:
+            return None
+        return round((self.finished_at or time.time()) - self.started_at, 1)
 
     def to_dict(self) -> dict:
-        return asdict(self)
-
-
-class Backend(Protocol):
-    def fetch_title(self, url: str) -> str: ...
-    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False) -> Path: ...
-    def download_video(self, url, output_dir, filename, on_progress=None, *, overwrite=False) -> Path: ...
-    def remove_vocals(self, audio_path, output_dir, on_progress=None) -> Path: ...
-    def update_ytdlp(self, timeout=30) -> bool: ...
+        return {
+            "id": self.id,
+            "url": self.url,
+            "filename": self.filename,
+            "overwrite": self.overwrite,
+            "options": self.options.to_dict(),
+            "outputs": [o.to_dict() for o in self.outputs],
+            "steps": list(self.steps),
+            "state": self.state,
+            "step": self.step,
+            "step_total": self.step_total,
+            "step_name": self.step_name,
+            "percent": self.percent,
+            "message": self.message,
+            "detail": self.detail,
+            "error_kind": self.error_kind,
+            "result_path": self.result_path,
+            "title": self.title,
+            "display_name": self.display_name,
+            "queue_position": self.queue_position,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "elapsed_seconds": self.elapsed_seconds(),
+            "eta_seconds": self.eta_seconds,
+        }
 
 
 UPDATE_FAILED_MESSAGE = "更新後仍無法下載，請稍後再試"
-
-
-def _target_names(name: str, mode: str) -> list[str]:
-    """這個模式會寫入（並可能刪除）的檔名；no_vocals 過程中會產生並刪除 <name>.wav。"""
-    if mode == "no_vocals":
-        return [f"{name}_no_vocals.mp3", f"{name}.wav"]
-    return [f"{name}.{mode}"]
 
 
 class JobQueue:
@@ -70,12 +98,18 @@ class JobQueue:
         self._stopping = threading.Event()
 
     # ---- 公開 API ----
-    def add(self, url: str, mode: str, filename: str | None = None, overwrite: bool = False) -> Job:
-        if mode not in MODES:
-            raise ValueError(f"未知模式：{mode}")
-        job = Job(uuid4().hex[:8], url, mode, filename, overwrite, step_total=len(MODES[mode]))
+    def add(self, url: str, options: OutputOptions | dict | str, filename: str | None = None,
+            overwrite: bool = False) -> Job:
+        """options 可以是 OutputOptions、API 的 outputs dict，或舊的模式字串（mp3 / mp4 / no_vocals）。"""
+        if isinstance(options, str):
+            options = OutputOptions.from_mode(options)
+        elif isinstance(options, dict):
+            options = OutputOptions.from_dict(options)
+        job = Job(uuid4().hex[:8], url, options, filename, overwrite,
+                  outputs=options.outputs(), steps=options.steps())
         with self._lock:
             self._jobs[job.id] = job
+            self._renumber()
             self._emit(job)
         self._pending.put(job.id)
         return job
@@ -92,7 +126,7 @@ class JobQueue:
         old = self.get(job_id)
         if old is None:
             raise KeyError(job_id)
-        return self.add(old.url, old.mode, old.filename, old.overwrite)
+        return self.add(old.url, old.options, old.filename, old.overwrite)
 
     def subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue()
@@ -120,18 +154,32 @@ class JobQueue:
             if not self._thread.is_alive():
                 self._thread = None
 
-    def exists(self, filename: str, mode: str) -> tuple[bool, str]:
+    def exists(self, filename: str, options: OutputOptions | dict | str) -> tuple[bool, str]:
+        if isinstance(options, str):
+            options = OutputOptions.from_mode(options)
+        elif isinstance(options, dict):
+            options = OutputOptions.from_dict(options)
         name = core.sanitize_filename(filename)
-        base = self._unique_base(name, mode)
+        base = self._unique_base(name, options)
         return base != name, base
 
     # ---- 內部 ----
-    def _unique_base(self, name: str, mode: str) -> str:
-        candidate, n = name, 0
-        while any((self.output_dir / t).exists() for t in _target_names(candidate, mode)):
-            n += 1
-            candidate = f"{name} ({n})"
-        return candidate
+    def _unique_base(self, name: str, options: OutputOptions) -> str:
+        return outputs.unique_base(self.output_dir, name, options)
+
+    def _renumber(self) -> "list[Job]":
+        """重排排隊中工作的順位，回傳順位有變的工作（呼叫端持有 lock）。"""
+        changed = []
+        n = 0
+        for job in self._jobs.values():
+            pos = None
+            if job.state == "queued":
+                n += 1
+                pos = n
+            if job.queue_position != pos:
+                job.queue_position = pos
+                changed.append(job)
+        return changed
 
     def _emit(self, job: Job) -> None:
         with self._lock:
@@ -143,10 +191,38 @@ class JobQueue:
         with self._lock:
             for k, v in fields.items():
                 setattr(job, k, v)
+            if "state" in fields:
+                for other in self._renumber():
+                    if other is not job:
+                        self._emit(other)
             self._emit(job)
 
-    def _set_step(self, job: Job, step: int) -> None:
-        self._update(job, step=step, step_name=MODES[job.mode][step - 1], percent=None)
+    def _set_step(self, job: Job, step: int, **fields) -> None:
+        with self._lock:
+            job._step_started = time.monotonic()
+            self._update(job, step=step, step_name=job.steps[step - 1], percent=None, eta_seconds=None, **fields)
+
+    def _set_percent(self, job: Job, percent: float | None) -> None:
+        with self._lock:
+            eta = None
+            if percent and percent > 0 and job._step_started is not None:
+                spent = time.monotonic() - job._step_started
+                eta = round(spent * (100 - percent) / percent, 1)
+            self._update(job, percent=percent, eta_seconds=eta)
+
+    def _set_output(self, job: Job, kind: str, state: str, path: Path | None) -> None:
+        with self._lock:
+            for o in job.outputs:
+                if o.kind == kind:
+                    o.state = state
+                    if path is not None:
+                        o.result_path = str(path)
+                        o.filename = Path(path).name
+                        try:
+                            o.size_bytes = Path(path).stat().st_size
+                        except OSError:
+                            o.size_bytes = None
+            self._emit(job)
 
     def _worker(self) -> None:
         while True:
@@ -162,53 +238,51 @@ class JobQueue:
                 self._run(job)
             except Exception as e:  # 任何例外都只讓該工作失敗，不讓 worker 死掉
                 err = errors.translate(e)
-                self._update(job, state="failed", message=err.message, detail=err.detail, error_kind=err.kind)
+                with self._lock:
+                    for o in job.outputs:
+                        if o.state != "done":
+                            o.state = "failed"
+                    self._update(job, state="failed", finished_at=time.time(), eta_seconds=None,
+                                 message=err.message, detail=err.detail, error_kind=err.kind)
 
     def _run(self, job: Job) -> None:
+        with self._lock:
+            job.started_at = time.time()  # 隨第 1 步的事件一起送出
         try:
-            path = self._attempt(job)
+            self._attempt(job)
         except VidSnatchError as e:
             if e.kind != "extractor_outdated":
                 raise
             self.backend.update_ytdlp()
             try:
-                path = self._attempt(job)
+                self._attempt(job)
             except VidSnatchError as e2:
                 if e2.kind != "extractor_outdated":
                     raise
                 raise VidSnatchError("extractor_outdated", UPDATE_FAILED_MESSAGE, e2.detail) from e2
 
-        self._update(job, state="done", step=job.step_total, step_name=MODES[job.mode][-1],
-                     percent=100.0, result_path=str(path), message="", detail="", error_kind=None)
+        self._update(job, state="done", step=job.step_total, step_name=job.steps[-1], percent=100.0,
+                     finished_at=time.time(), eta_seconds=None, message="", detail="", error_kind=None)
 
-    def _attempt(self, job: Job) -> Path:
-        """取得檔名並下載；YouTube 改版時整段（含取標題）會在更新 yt-dlp 後重跑一次。"""
-        self._update(job, state="running", step=1, step_name=MODES[job.mode][0], percent=None)
-        name = core.sanitize_filename(job.filename if job.filename else self.backend.fetch_title(job.url))
-        if not job.overwrite:
-            name = self._unique_base(name, job.mode)
+    def _attempt(self, job: Job) -> None:
+        """取得標題與檔名並產出所有輸出；YouTube 改版時整段（含取標題）會在更新 yt-dlp 後重跑一次。"""
         with self._lock:
-            job.display_name = name  # 隨下一個步驟事件一起送出
-        return self._download(job, name)
-
-    def _download(self, job: Job, name: str) -> Path:
-        b = self.backend
-        self._set_step(job, 2)
-
-        def on_progress(p: float | None) -> None:
-            with self._lock:
-                if p is None and job.step == 2:
-                    self._set_step(job, 3)
-                elif p is not None:
-                    self._update(job, percent=p)
-
-        if job.mode == "mp3":
-            return b.download_audio(job.url, self.output_dir, name, "mp3", on_progress, overwrite=job.overwrite)
-        if job.mode == "mp4":
-            return b.download_video(job.url, self.output_dir, name, on_progress, overwrite=job.overwrite)
-        wav = b.download_audio(job.url, self.output_dir, name, "wav", on_progress, overwrite=job.overwrite)
-        try:
-            self._set_step(job, 4)
-            return b.remove_vocals(wav, self.output_dir, on_progress)
-        finally:
-            Path(wav).unlink(missing_ok=True)
+            for o in job.outputs:
+                o.state, o.result_path, o.size_bytes = "queued", None, None
+        self._set_step(job, 1, state="running")
+        title = self.backend.fetch_title(job.url)
+        name = core.sanitize_filename(job.filename if job.filename else title)
+        if not job.overwrite:
+            name = self._unique_base(name, job.options)
+        with self._lock:
+            job.title = title
+            job.display_name = name
+            for o in job.outputs:
+                o.filename = job.options.filename(name, o.kind)
+        hooks = Hooks(
+            on_step=lambda i: self._set_step(job, i),
+            on_progress=lambda p: self._set_percent(job, p),
+            on_output=lambda kind, state, path: self._set_output(job, kind, state, path),
+        )
+        outputs.execute(job.options, job.url, self.output_dir, name, self.backend,
+                        overwrite=job.overwrite, hooks=hooks)

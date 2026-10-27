@@ -8,7 +8,9 @@ HF_HUB_OFFLINE=1，只讀快取、不連網。
     python models.py
 """
 
-DEMUCS_MODEL = "htdemucs_ft"  # fine-tuned: best quality, ~4x slower than htdemucs
+# 使用者可選的分離模型：快速（約 80 MB）與高品質（4 個模型的 bag，約 320 MB、慢約 4 倍）
+DEMUCS_MODELS = ("htdemucs", "htdemucs_ft")
+DEMUCS_MODEL = "htdemucs_ft"  # 預設：fine-tuned, best quality
 
 
 def preload(name: str = DEMUCS_MODEL) -> list[str]:
@@ -28,6 +30,14 @@ def preload(name: str = DEMUCS_MODEL) -> list[str]:
     return paths
 
 
+def preload_all(names: tuple[str, ...] = DEMUCS_MODELS) -> list[str]:
+    """預載所有可選模型，回傳全部檔案路徑。"""
+    paths: list[str] = []
+    for name in names:
+        paths.extend(preload(name))
+    return paths
+
+
 if __name__ == "__main__":
     # 只印 ASCII：Windows 上輸出被導向時預設是 cp1252，路徑裡的中文會讓 print 失敗
-    print(f"demucs model files ready: {len(preload())}")
+    print(f"demucs model files ready: {len(preload_all())}")
