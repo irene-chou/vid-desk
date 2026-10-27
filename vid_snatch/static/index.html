@@ -39,7 +39,7 @@
   @media (prefers-reduced-motion: reduce) {
     .spin { animation: none; }
     .bar.indet i { animation: none; }
-    .adv > summary .chev { transition: none; }
+    .adv > summary .chev, .settings details > summary .chev { transition: none; }
   }
 
   /* ===== 版面 ===== */
@@ -111,10 +111,12 @@
   .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
   .adv { border-top: 1px dashed var(--line); padding-top: 8px; }
-  .adv > summary { list-style: none; cursor: pointer; font-size: 0.76rem; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; min-height: 28px; }
-  .adv > summary::-webkit-details-marker { display: none; }
-  .adv > summary .chev { transition: transform 150ms; }
-  .adv[open] > summary .chev { transform: rotate(180deg); }
+  /* 收合標題共用：隱藏原生三角形，用 .chev 取代，展開時轉 180° */
+  .adv > summary, .settings details > summary { list-style: none; cursor: pointer; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; min-height: 28px; }
+  .adv > summary::-webkit-details-marker, .settings details > summary::-webkit-details-marker { display: none; }
+  .adv > summary .chev, .settings details > summary .chev { transition: transform 150ms; }
+  .adv[open] > summary .chev, .settings details[open] > summary .chev { transform: rotate(180deg); }
+  .adv > summary { font-size: 0.76rem; }
   .adv .sub { margin-top: 8px; }
 
   /* 檔名列 */
@@ -171,7 +173,7 @@
   .kvline { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; font-size: 0.85rem; }
   .kvline .k { color: var(--muted); font-size: 0.74rem; }
   #output-dir { overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.8rem; }
-  .settings details > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; min-height: 28px; display: inline-flex; align-items: center; }
+  .settings details > summary { font-size: 0.8rem; }
   .settings details .row { margin-top: 8px; }
 
   /* ===== 對話框 ===== */
@@ -238,7 +240,7 @@
       <button id="shutdown" type="button">結束 vid-snatch</button>
     </div>
     <details>
-      <summary>進階</summary>
+      <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
       <div class="row">
         <button id="rebuild" type="button">更新 vid-snatch</button>
         <button id="uninstall" type="button" class="danger">解除安裝</button>

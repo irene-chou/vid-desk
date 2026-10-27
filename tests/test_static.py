@@ -31,6 +31,18 @@ def test_csrf_header_and_sse_present():
 def test_reduced_motion_respected():
     assert "prefers-reduced-motion: reduce" in HTML
 
+def test_every_summary_has_chevron():
+    # #19：每個 <details> 的 summary 都要有自訂箭頭，原生三角形則隱藏，避免兩個箭頭
+    summaries = re.findall(r"<summary\b[^>]*>.*?</summary>", HTML, re.S)
+    assert len(summaries) >= 2, "至少要有「進階」與「細項」兩個 summary"
+    for s in summaries:
+        assert "#i-chev" in s, s
+    assert re.search(r"\.settings details > summary::-webkit-details-marker \{ display: none; \}", HTML)
+    assert re.search(r"\.settings details > summary \{[^}]*list-style: none;", HTML)
+    assert re.search(r"\.settings details\[open\] > summary \.chev \{ transform: rotate\(180deg\); \}", HTML)
+    # reduced-motion 下箭頭不動畫
+    assert re.search(r"prefers-reduced-motion: reduce\) \{[^@]*\.settings details > summary \.chev \{ transition: none; \}", HTML, re.S)
+
 def test_post_responses_do_not_overwrite_newer_sse_state():
     # POST /api/jobs 與重試的回應可能比 SSE 舊；卡片已存在就不要覆蓋
     assert re.search(r"function renderIfNew\(job\)\s*\{\s*if \(!cards\.has\(job\.id\)\) renderJob\(job\);", HTML)
