@@ -1,6 +1,6 @@
 name: Docker check
 
-# publish.yml 只在 main 上建置；這裡在 PR 先確認映像檔能建、能離線去人聲、網頁伺服器能啟動（不推送）
+# publish.yml 只在推 v* 標籤時建置並推送；這裡在 PR 先確認映像檔能建、能離線去人聲、網頁伺服器能啟動（不推送）
 on:
   pull_request:
   workflow_dispatch:
