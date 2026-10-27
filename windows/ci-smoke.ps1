@@ -166,9 +166,42 @@ function Get-Text([string]$url) {
     return [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
 }
 
-# 等到 server.json 出現且其 port 的 /api/health 有回應；回傳 server.json 內容。
-# $exceptPid：忽略這個 pid（更新後要等新的伺服器）
-function Wait-Server($proc, [int]$seconds, [int]$exceptPid = 0) {
+# 主腳本的 Wait-Health 通過後（清掉 state\repair、開瀏覽器）才印這行，進入主機端動作迴圈
+$RunningLine = 'vid-snatch 執行中'
+
+function Get-LauncherName($proc) {
+    foreach ($l in @($Launchers)) { if ($l.Proc.Id -eq $proc.Id) { return $l.Name } }
+    return ''
+}
+
+function Get-Count([string]$text, [string]$part) {
+    $n = 0
+    $i = $text.IndexOf($part)
+    while ($i -ge 0) { $n++; $i = $text.IndexOf($part, $i + $part.Length) }
+    return $n
+}
+
+# 等到 server.json 出現且其 port 的 /api/health 有回應，而且主腳本也已確認就緒
+# （輸出出現第 $runs 次「vid-snatch 執行中」），才回傳 server.json 內容。
+# 只看健康檢查會搶在主腳本自己的 Wait-Health 之前，之後馬上送 shutdown 時主腳本會當成
+# 「啟動中就被要求結束」，不會清掉 state\repair。
+# $exceptPid：忽略這個 pid（更新後要等新的伺服器）；$runs：同一個啟動器第幾次就緒
+function Wait-Server($proc, [int]$seconds, [int]$exceptPid = 0, [int]$runs = 1) {
+    $info = Wait-Health $proc $seconds $exceptPid
+    $name = Get-LauncherName $proc
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ((Get-Count (Get-LauncherOutput $name) $RunningLine) -lt $runs) {
+        if ($proc.HasExited) { Fail "啟動器在主腳本就緒前結束，結束碼 $($proc.ExitCode)" }
+        if ($sw.Elapsed.TotalSeconds -ge 30) {
+            Fail "健康檢查通過後 30 秒，$name 的輸出仍沒有第 $runs 次「$RunningLine」"
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Host ("主腳本已就緒（再等 {0:N1} 秒）" -f $sw.Elapsed.TotalSeconds)
+    return $info
+}
+
+function Wait-Health($proc, [int]$seconds, [int]$exceptPid) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $nextReport = 60
     while ($sw.Elapsed.TotalSeconds -lt $seconds) {
@@ -450,7 +483,7 @@ $env:VS_UPDATE_API = $ShaApi
 $upd = Start-Launcher 'launcher-update'
 $info8 = Wait-Server $upd 120
 Invoke-Post $info8.port '/api/rebuild' ''
-$info8b = Wait-Server $upd (20 * 60) $info8.pid
+$info8b = Wait-Server $upd (20 * 60) $info8.pid 2
 Assert-ProcessGone $info8.pid
 if ((Read-Text $CommitMarker) -ne $Sha) { Fail "更新後 state\installed-commit 是「$(Read-Text $CommitMarker)」，預期 $Sha" }
 Stop-AndVerify $upd $info8b '更新後的啟動器'
