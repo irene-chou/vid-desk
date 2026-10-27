@@ -25,6 +25,10 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
+  /* body 是捲動容器：設定 modal 鎖住捲動時 scrollbar-gutter 仍保留捲軸空間，非 overlay 捲軸（Windows）下底層內容不位移
+     （Chrome 對 html 的 scrollbar-gutter 在 overflow: hidden 時不保留，所以不能放在 html） */
+  html { height: 100%; overflow: hidden; }
+  body { height: 100%; overflow-y: auto; scrollbar-gutter: stable; }
   body {
     background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -59,7 +63,6 @@
   .stat { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); display: flex; gap: 14px; }
   .stat span { display: inline-flex; gap: 5px; align-items: center; }
   .stat b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
-  .settings { grid-column: 1 / -1; }
 
   /* ===== 按鈕 ===== */
   button { font: inherit; font-size: 0.88rem; padding: 7px 14px; border-radius: var(--r-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
@@ -175,10 +178,16 @@
   #output-dir { overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.8rem; }
   .settings details > summary { font-size: 0.8rem; }
   .settings details .row { margin-top: 8px; }
+  /* 「進階」底下的狀態訊息與按鈕列分開（#20） */
+  .settings details .notice { margin-top: 8px; }
 
   /* ===== 對話框 ===== */
   dialog { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--fg); max-width: min(420px, calc(100vw - 32px)); padding: 20px; font-family: var(--sans); }
   dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+  /* 設定 modal：桌面 480px 置中、窄版貼齊 16px 邊距；內容過高時 dialog 內捲、頁面不捲 */
+  dialog.settings { width: min(480px, calc(100vw - 32px)); max-width: none; padding: 16px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; }
+  dialog.settings[open] { display: grid; gap: 14px; align-content: start; }
+  body:has(dialog.settings[open]) { overflow: hidden; }
   dialog p { margin: 0 0 16px; font-weight: 600; overflow-wrap: anywhere; }
   .dialog-buttons { display: flex; flex-direction: column; gap: 8px; }
   .dialog-buttons button { padding: 10px 14px; }
@@ -228,26 +237,8 @@
       <span title="完成"><svg class="ic"><use href="#i-checkc"/></svg><b id="stat-done">0</b></span>
       <span title="失敗"><svg class="ic"><use href="#i-xc"/></svg><b id="stat-failed">0</b></span>
     </div>
-    <button id="settings-toggle" class="ibtn" type="button" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
-
-  <section id="settings" class="panel settings" hidden aria-label="設定">
-    <div class="lbl">設定</div>
-    <div class="kvline"><span class="k">下載資料夾</span><span id="output-dir">讀取中…</span></div>
-    <div id="folder-notice" class="notice" hidden>已更新，下次啟動生效</div>
-    <div class="row">
-      <button id="pick-folder" type="button">更換資料夾</button>
-      <button id="shutdown" type="button">結束 vid-snatch</button>
-    </div>
-    <details>
-      <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
-      <div class="row">
-        <button id="rebuild" type="button">更新 vid-snatch</button>
-        <button id="uninstall" type="button" class="danger">解除安裝</button>
-      </div>
-      <div id="advanced-notice" class="notice" hidden></div>
-    </details>
-  </section>
 
   <section class="panel" id="input" aria-label="新工作">
     <div class="field">
@@ -326,6 +317,24 @@
     <ul id="jobs-done" aria-label="已完成"></ul>
   </section>
 </div>
+
+<dialog id="settings" class="settings" aria-label="設定">
+  <div class="lbl">設定<button id="settings-close" class="ibtn sm ghost" type="button" aria-label="關閉" title="關閉"><svg class="ic"><use href="#i-x"/></svg></button></div>
+  <div class="kvline"><span class="k">下載資料夾</span><span id="output-dir">讀取中…</span></div>
+  <div id="folder-notice" class="notice" hidden>已更新，下次啟動生效</div>
+  <div class="row">
+    <button id="pick-folder" type="button">更換資料夾</button>
+    <button id="shutdown" type="button">結束 vid-snatch</button>
+  </div>
+  <details>
+    <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
+    <div class="row">
+      <button id="rebuild" type="button">更新 vid-snatch</button>
+      <button id="uninstall" type="button" class="danger">解除安裝</button>
+    </div>
+    <div id="advanced-notice" class="notice" hidden></div>
+  </details>
+</dialog>
 
 <dialog id="ask">
   <p id="ask-title"></p>
@@ -1097,10 +1106,27 @@ function connectEvents() {
 
 // ---------- 設定 ----------
 
-function toggleSettings() {
-  const panel = $("settings");
-  panel.hidden = !panel.hidden;
-  $("settings-toggle").setAttribute("aria-expanded", String(!panel.hidden));
+// 設定是 modal（原生 <dialog>）：開關不推擠版面；Esc 走原生 cancel，關閉後焦點回到齒輪
+function openSettings() {
+  const dialog = $("settings");
+  if (dialog.open) return;
+  dialog.showModal();
+  $("settings-toggle").setAttribute("aria-expanded", "true");
+}
+
+function onSettingsClosed() {
+  const btn = $("settings-toggle");
+  btn.setAttribute("aria-expanded", "false");
+  btn.focus();
+}
+
+// 點 backdrop 關閉：backdrop 的事件 target 是 dialog 本身，再用座標排除 dialog 內的 padding
+function onSettingsBackdropClick(event) {
+  const dialog = $("settings");
+  if (event.target !== dialog) return;
+  const r = dialog.getBoundingClientRect();
+  const inside = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+  if (!inside) dialog.close();
 }
 
 async function loadSettings() {
@@ -1189,7 +1215,10 @@ urlsEl.addEventListener("keydown", (event) => {
 $("paste").addEventListener("click", pasteFromClipboard);
 startEl.addEventListener("click", startJobs);
 for (const input of document.querySelectorAll("#input .out input")) input.addEventListener("change", onOutputsChange);
-$("settings-toggle").addEventListener("click", toggleSettings);
+$("settings-toggle").addEventListener("click", openSettings);
+$("settings-close").addEventListener("click", () => $("settings").close());
+$("settings").addEventListener("click", onSettingsBackdropClick);
+$("settings").addEventListener("close", onSettingsClosed);
 $("pick-folder").addEventListener("click", pickFolder);
 $("shutdown").addEventListener("click", shutdown);
 $("rebuild").addEventListener("click", rebuild);
