@@ -38,6 +38,7 @@ $DEFAULT_PORT = 8080
 $MAX_PORT = 8180
 $Port = $DEFAULT_PORT
 $Pickers = New-Object System.Collections.ArrayList
+$ServerProc = $null
 
 # ── 設定檔 ──────────────────────────────────
 $ConfigDir = Join-Path $Root 'config'
@@ -296,6 +297,9 @@ function Start-Server {
     try {
         $proc = Start-Process -WindowStyle Hidden -FilePath $VenvExe -ArgumentList @('--web', '--port', "$p") `
             -RedirectStandardOutput $ServerLog -RedirectStandardError $ServerErrLog -PassThru -ErrorAction Stop
+        # 先取 Handle，否則行程結束後在 PowerShell 5.1 讀不到 ExitCode
+        $null = $proc.Handle
+        $script:ServerProc = $proc
     } catch {
         Write-Host "無法啟動 vid-snatch：$VenvExe"
         return $false
@@ -327,6 +331,14 @@ function Wait-Health {
             Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2 | Out-Null
             return
         } catch { }
+        # 伺服器在就緒前就結束了（例如啟動當下就收到結束要求，或啟動失敗），不必再等
+        if ($script:ServerProc -and $script:ServerProc.HasExited) {
+            if ($script:ServerProc.ExitCode -eq 0) {
+                Write-Host 'vid-snatch 已停止。'
+                exit 0
+            }
+            break
+        }
         Start-Sleep -Milliseconds 500
     }
     Write-Host ''

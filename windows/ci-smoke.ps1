@@ -23,6 +23,7 @@ $EmptyInput = Join-Path $SmokeLogDir 'empty-stdin.txt'
 $Scenario = '準備'
 $Launchers = New-Object System.Collections.ArrayList
 $PortHolder = $null
+$Failing = $false
 
 function Remove-IfExists([string]$path) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
@@ -54,6 +55,9 @@ function Show-Logs {
 }
 
 function Fail([string]$msg) {
+    # Fail 本身出錯時 trap 會再呼叫它，避免無限遞迴
+    if ($script:Failing) { exit 1 }
+    $script:Failing = $true
     Write-Host ''
     Write-Host "::error::情境「$Scenario」失敗：$msg"
     Show-Logs
@@ -65,6 +69,11 @@ function Fail([string]$msg) {
     if ($info) { try { Stop-Process -Id $info.pid -Force } catch { } }
     if ($PortHolder) { try { Stop-Process -Id $PortHolder.Id -Force } catch { } }
     exit 1
+}
+
+# 沒被接住的錯誤（$ErrorActionPreference = 'Stop'）也要印出記錄檔
+trap {
+    Fail "未預期的錯誤：$($_.Exception.Message)（$($_.InvocationInfo.PositionMessage)）"
 }
 
 function Start-Scenario([string]$name) {
