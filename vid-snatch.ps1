@@ -3,6 +3,12 @@
 # 注意：此檔需存成 UTF-8 with BOM，Windows PowerShell 5.1 才能正確讀取中文。
 # 由 windows\launcher.ps1 以 -Commit <sha 或 local>（及更新時的 -Upgrade）呼叫；
 # 這個檔案所在的資料夾即要安裝的原始碼（含 pyproject.toml）。
+#
+# 與 launcher.ps1 的約定——啟動器發佈後無法再更新，以下永遠不能改：
+#   - 這個檔案固定放在原始碼封存檔的根目錄，檔名 vid-snatch.ps1
+#   - 接受 -Commit <40 碼 sha 或 local> 與 -Upgrade 兩個參數（日後只能新增選用參數）
+#   - 結束碼 10 只在使用者按「更新」時回傳（啟動器會重新取原始碼並以 -Upgrade 再執行）；
+#     其他情況只回傳 0（正常結束）或 1（失敗，.bat 會停住視窗）
 
 param(
     [string]$Commit = 'local',
@@ -29,6 +35,8 @@ $TorchDir = Join-Path $Root 'torch'
 $ModelDir = Join-Path $TorchDir 'hub\checkpoints'
 $StateDir = Join-Path $Root 'state'
 $CommitMarker = Join-Path $StateDir 'installed-commit'
+# 上次啟動失敗時留下，下次啟動改用 uv pip install --reinstall 修復 venv
+$RepairFlag = Join-Path $StateDir 'repair'
 $LogDir = Join-Path $Root 'logs'
 $ServerLog = Join-Path $LogDir 'server.log'
 $ServerErrLog = Join-Path $LogDir 'server.err.log'
@@ -43,7 +51,10 @@ $ServerProc = $null
 # ── 設定檔 ──────────────────────────────────
 $ConfigDir = Join-Path $Root 'config'
 $ConfigFile = Join-Path $ConfigDir 'config'
-$DefaultOutputDir = Join-Path $env:USERPROFILE 'Music\vid-snatch'
+# 「音樂」資料夾可能被 OneDrive 或使用者搬到別處，以系統回報的位置為準
+$MusicDir = [Environment]::GetFolderPath('MyMusic')
+if (-not $MusicDir) { $MusicDir = Join-Path $env:USERPROFILE 'Music' }
+$DefaultOutputDir = Join-Path $MusicDir 'vid-snatch'
 $OutputDir = $DefaultOutputDir
 
 function Get-CleanPath([string]$p) {
@@ -95,6 +106,10 @@ function Assert-SupportedArch {
     # 32 位元 PowerShell 跑在 64 位元 Windows 上時，真正的架構在 PROCESSOR_ARCHITEW6432
     if ($env:PROCESSOR_ARCHITEW6432 -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
         Write-Host '目前不支援 ARM 版 Windows'
+        exit 1
+    }
+    if ($env:PROCESSOR_ARCHITECTURE -eq 'x86' -and -not $env:PROCESSOR_ARCHITEW6432) {
+        Write-Host '目前不支援 32 位元版 Windows'
         exit 1
     }
 }
@@ -152,15 +167,44 @@ function Set-InstallEnv {
     $env:UV_CACHE_DIR = $CacheDir
     # 一律用 uv 自己下載的 Python，避免日後移除系統 Python 時 venv 跟著壞掉
     $env:UV_PYTHON_PREFERENCE = 'only-managed'
+    # 不把 uv 下載的 Python 登錄到 HKCU\Software\Python，解除安裝只要刪掉 $Root
+    $env:UV_PYTHON_INSTALL_REGISTRY = '0'
+    # yt-dlp（XDG_CACHE_HOME）、pip、deno 的快取也放在 $Root 底下，不留在使用者資料夾
+    $env:XDG_CACHE_HOME = Join-Path $Root 'cache-xdg'
+    $env:PIP_CACHE_DIR = Join-Path $Root 'cache-pip'
+    $env:DENO_DIR = Join-Path $Root 'cache-deno'
 }
 
+# 成功回傳 $true；uv 的輸出直接顯示，不混進回傳值
 function Install-Packages([string[]]$Extra) {
     $uvArgs = @('pip', 'install', '--python', $VenvPython) + $Extra + @($PSScriptRoot)
-    & $UvExe @uvArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ''
-        Write-Host "安裝元件失敗，$RetryHint"
-        Write-Host '若仍然失敗，請把這個視窗的內容截圖給開發者'
+    & $UvExe @uvArgs | Out-Host
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Exit-InstallFailed {
+    Write-Host ''
+    Write-Host "安裝元件失敗，$RetryHint"
+    Write-Host '若仍然失敗，請把這個視窗的內容截圖給開發者'
+    exit 1
+}
+
+# 安裝紀錄：裝套件前先刪掉，裝完才寫回，中斷時下次啟動會重新安裝
+function Set-CommitMarker([string]$value) {
+    try {
+        [void][System.IO.Directory]::CreateDirectory($StateDir)
+        [System.IO.File]::WriteAllText($CommitMarker, $value)
+    } catch {
+        Write-Host "無法寫入安裝紀錄：$CommitMarker"
+        exit 1
+    }
+}
+
+function Clear-CommitMarker {
+    try {
+        Remove-IfExists $CommitMarker
+    } catch {
+        Write-Host "無法清除安裝紀錄：$CommitMarker"
         exit 1
     }
 }
@@ -204,28 +248,37 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     if (Test-Path -LiteralPath $CommitMarker) {
         $installed = ([System.IO.File]::ReadAllText($CommitMarker)).Trim()
     }
-    $changed = $false
-    if ($null -eq $installed) {
+    if (Test-Path -LiteralPath $RepairFlag) {
+        # 上次裝完卻沒能啟動：整個 venv 重裝（套件都在 uv 快取裡，離線也能完成）
+        Write-Host ''
+        Write-Host '上次沒有順利啟動，正在修復元件…'
+        Clear-CommitMarker
+        if (-not (Install-Packages @('--reinstall'))) { Exit-InstallFailed }
+        Set-CommitMarker $Commit
+    } elseif ($null -eq $installed) {
         Write-Host ''
         Write-Host '正在安裝去人聲元件（約 1 GB，約 5–10 分鐘）…'
-        Install-Packages @()
-        $changed = $true
+        if (-not (Install-Packages @())) { Exit-InstallFailed }
+        Set-CommitMarker $Commit
     } elseif ($Upgrade) {
         Write-Host '正在更新元件…'
-        Install-Packages @('--upgrade', '--reinstall-package', 'vid-snatch')
-        $changed = $true
-    } elseif ($installed -ne $Commit -or $Commit -eq 'local' -or -not (Test-Path -LiteralPath $VenvExe)) {
+        Clear-CommitMarker
+        if (-not (Install-Packages @('--upgrade', '--reinstall-package', 'vid-snatch'))) { Exit-InstallFailed }
+        Set-CommitMarker $Commit
+    } elseif ($installed -ne $Commit -or -not (Test-Path -LiteralPath $VenvExe) -or
+        ($Commit -eq 'local' -and $env:VS_SOURCE -eq 'local')) {
+        # 'local'（解壓資料夾的原始碼）只在開發／測試指定 VS_SOURCE=local 時每次重裝
         Write-Host '正在安裝新版 vid-snatch…'
-        Install-Packages @('--reinstall-package', 'vid-snatch')
-        $changed = $true
-    }
-    if ($changed) {
-        try {
-            [void][System.IO.Directory]::CreateDirectory($StateDir)
-            [System.IO.File]::WriteAllText($CommitMarker, $Commit)
-        } catch {
-            Write-Host "無法寫入安裝紀錄：$CommitMarker"
-            exit 1
+        Clear-CommitMarker
+        if (Install-Packages @('--reinstall-package', 'vid-snatch')) {
+            Set-CommitMarker $Commit
+        } elseif (Test-Path -LiteralPath $VenvExe) {
+            # 多半是離線（安裝需要網路），先用已安裝的版本，下次啟動再試
+            Write-Host ''
+            Write-Host '暫時無法安裝新版，先用目前已安裝的版本啟動。'
+            Set-CommitMarker $installed
+        } else {
+            Exit-InstallFailed
         }
     }
 
@@ -294,6 +347,8 @@ function Start-Server {
     $env:VS_HOST_OUTPUT_DIR = $OutputDir
     $env:VS_CONFIG_DIR = $ConfigDir
     $env:VS_BIND = '127.0.0.1'
+    # 輸出被導向記錄檔時 Python 預設用 cp1252 等系統編碼，改成 UTF-8 中文才不會變亂碼
+    $env:PYTHONUTF8 = '1'
     try {
         $proc = Start-Process -WindowStyle Hidden -FilePath $VenvExe -ArgumentList @('--web', '--port', "$p") `
             -RedirectStandardOutput $ServerLog -RedirectStandardError $ServerErrLog -PassThru -ErrorAction Stop
@@ -326,7 +381,8 @@ function Invoke-ApiGet([string]$path, [int]$timeout) {
 
 function Wait-Health {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt 60) {
+    # 首次啟動時 Defender 會掃描剛裝好的大量檔案，給寬一點
+    while ($sw.Elapsed.TotalSeconds -lt 120) {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2 | Out-Null
             return
@@ -341,16 +397,27 @@ function Wait-Health {
         }
         Start-Sleep -Milliseconds 500
     }
+    # 安裝可能殘缺：清掉安裝紀錄並標記修復，下次啟動會整個重裝 venv
+    try {
+        Remove-IfExists $CommitMarker
+        [void][System.IO.Directory]::CreateDirectory($StateDir)
+        [System.IO.File]::WriteAllText($RepairFlag, '1')
+    } catch { }
     Write-Host ''
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
+    Write-Host '下次啟動會自動嘗試修復。'
     Write-Host ''
     if (Test-Path -LiteralPath $ServerErrLog) {
         Get-Content -LiteralPath $ServerErrLog -Tail 20 -Encoding UTF8 -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host $_ }
     }
     Write-Host ''
-    # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
+    # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
     exit 1
+}
+
+function Clear-RepairFlag {
+    try { Remove-IfExists $RepairFlag } catch { }
 }
 
 function Open-Browser {
@@ -495,6 +562,23 @@ function Clear-Pickers {
     }
 }
 
+# 刪除整個資料夾；遇到唯讀檔（[IO.Directory]::Delete 會失敗）先清掉屬性再刪一次
+function Remove-Tree([string]$path) {
+    try {
+        [System.IO.Directory]::Delete($path, $true)
+        return $true
+    } catch { }
+    try {
+        foreach ($f in @(Get-ChildItem -LiteralPath $path -Recurse -Force -File -ErrorAction SilentlyContinue)) {
+            try { $f.Attributes = [System.IO.FileAttributes]::Normal } catch { }
+        }
+        [System.IO.Directory]::Delete($path, $true)
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-Uninstall($deleteDownloads) {
     Write-Host ''
     Write-Host '正在移除 vid-snatch…'
@@ -506,25 +590,17 @@ function Invoke-Uninstall($deleteDownloads) {
         $def = "$DefaultOutputDir".TrimEnd('\')
         if ($out -and ($out -ieq $def)) {
             $deleted = $true
-            if (Test-Path -LiteralPath $out) {
-                try {
-                    [System.IO.Directory]::Delete($out, $true)
-                } catch {
-                    $deleted = $false
-                    Write-Host "無法刪除下載資料夾，請自行刪除：$out"
-                }
+            if ((Test-Path -LiteralPath $out) -and -not (Remove-Tree $out)) {
+                $deleted = $false
+                Write-Host "無法刪除下載資料夾，請自行刪除：$out"
             }
             if ($deleted) { Write-Host '已刪除下載檔案。' }
         } else {
             Write-Host "下載資料夾不是預設位置，為了安全不會自動刪除，如需要請自行刪除：$OutputDir"
         }
     }
-    if (Test-Path -LiteralPath $Root) {
-        try {
-            [System.IO.Directory]::Delete($Root, $true)
-        } catch {
-            Write-Host "無法刪除安裝資料夾，請自行刪除：$Root"
-        }
+    if ((Test-Path -LiteralPath $Root) -and -not (Remove-Tree $Root)) {
+        Write-Host "無法刪除安裝資料夾，請自行刪除：$Root"
     }
     Write-Host ''
     Write-Host '============================================'
@@ -541,7 +617,7 @@ function Invoke-Rebuild {
     Write-Host '正在更新…'
     if (-not (Stop-VidSnatch)) {
         Write-Host '無法停止 vid-snatch，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
-        # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
+        # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
         exit 1
     }
     exit 10
@@ -619,7 +695,7 @@ if (Test-ServerRunning) {
 Ensure-Installed $Commit -Upgrade:$Upgrade
 if (-not (Start-Server)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
-    # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
+    # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
     exit 1
 }
 
@@ -627,6 +703,7 @@ if (-not (Start-Server)) {
 # Ctrl-C 與正常結束（含 exit）都會執行 finally，停止我們啟動的伺服器。
 try {
     Wait-Health
+    Clear-RepairFlag
     Open-Browser
     Invoke-HostLoop
 } finally {
