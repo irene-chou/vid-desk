@@ -84,7 +84,7 @@ def test_pick_folder_cancelled_keeps_setting(env):
 def test_settings_write(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"output_dir": "/new/dir"}, headers=H).json()
-    assert r["restart_required"] is True and (cfg / "config").read_text() == "output_dir=/new/dir\n"
+    assert r["restart_required"] is True and (cfg / "config").read_text(encoding="utf-8") == "output_dir=/new/dir\n"
 
 def test_shutdown_calls_hook(env):
     c, q, h, cfg, shutdown = env

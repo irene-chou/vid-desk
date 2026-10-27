@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-HTML = (Path(__file__).parent.parent / "vid_snatch/static/index.html").read_text()
+HTML = (Path(__file__).parent.parent / "vid_snatch/static/index.html").read_text(encoding="utf-8")
 
 def test_required_ids_present():
     for i in ["urls", "paste", "mode-mp3", "mode-no_vocals", "mode-mp4", "names", "start", "jobs",
