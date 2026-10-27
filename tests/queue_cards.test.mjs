@@ -13,7 +13,7 @@ const outputsBlock = html.split("// @@outputs-state-begin")[1].split("// @@outpu
 const cardBlock = html.split("// @@card-fns-begin")[1].split("// @@card-fns-end")[0];
 const api = vm.runInThisContext(
   `(function () {\n${outputsBlock}\n${cardBlock}\nreturn { fmtDuration, fmtSize, outputLabel, statusText, timingBase, timingText,
-     isUpdateFailed, failureText, showsUpdateButton, hasActiveJobs,
+     isUpdateFailed, showsUpdateFailedBanner,
      STATE_ICONS, OUTPUT_STATE_ICONS, OUTPUT_PILL_CLASS, KIND_ICONS, FINISHED_STATES }; })()`,
 );
 
@@ -81,30 +81,29 @@ test("圖示與樣式對照含 cancelled", () => {
   assert.deepEqual(api.FINISHED_STATES, ["done", "failed", "cancelled"]);
 });
 
-test("自動更新後仍失敗（update_failed）：訊息依能否升級元件補引導；只看 error_kind 不看訊息", () => {
-  const job = { state: "failed", error_kind: "update_failed", message: "下載工具更新後仍無法下載" };
-  assert.equal(api.isUpdateFailed(job), true);
-  assert.equal(api.failureText(job, true), "下載工具更新後仍無法下載，可能需要更新其他元件");
-  assert.equal(api.failureText(job, false), "下載工具更新後仍無法下載，請稍後再試，或等待新版");
-  assert.equal(api.failureText(job, undefined), "下載工具更新後仍無法下載，請稍後再試，或等待新版");
-  // 其他失敗原樣顯示；沒有訊息給預設文字
+test("update_failed 只看 error_kind 與 state，不看訊息", () => {
+  assert.equal(api.isUpdateFailed({ state: "failed", error_kind: "update_failed", message: "下載工具更新後仍無法下載" }), true);
+  assert.equal(api.isUpdateFailed({ state: "failed", error_kind: "update_failed", message: "" }), true);
   assert.equal(api.isUpdateFailed({ state: "failed", error_kind: "extractor_outdated", message: "更新後仍無法下載" }), false);
-  assert.equal(api.failureText({ state: "failed", error_kind: "network", message: "無法連線，請檢查網路" }, true), "無法連線，請檢查網路");
-  assert.equal(api.failureText({ state: "failed", error_kind: "unknown", message: "" }, true), "發生錯誤");
   assert.equal(api.isUpdateFailed({ state: "done", error_kind: "update_failed" }), false);
+  assert.equal(api.isUpdateFailed({ state: "failed", error_kind: null }), false);
 });
 
-test("「更新」鈕只在 update_failed 且 can_upgrade 為 true 時出現", () => {
-  const job = { state: "failed", error_kind: "update_failed", message: "x" };
-  assert.equal(api.showsUpdateButton(job, true), true);
-  assert.equal(api.showsUpdateButton(job, false), false);
-  assert.equal(api.showsUpdateButton(job, "1"), false);
-  assert.equal(api.showsUpdateButton({ state: "failed", error_kind: "network" }, true), false);
-});
-
-test("有排隊中或進行中的工作才需要先確認", () => {
-  assert.equal(api.hasActiveJobs(["failed", "done", "cancelled"]), false);
-  assert.equal(api.hasActiveJobs(["failed", "queued"]), true);
-  assert.equal(api.hasActiveJobs(["running"]), true);
-  assert.equal(api.hasActiveJobs([]), false);
+test("頁面橫幅（#31）：有 update_failed 的工作就顯示；之後有工作成功或卡片被清掉就收起", () => {
+  const uf = (created_at) => ({ state: "failed", error_kind: "update_failed", created_at });
+  const done = (created_at) => ({ state: "done", error_kind: null, created_at });
+  assert.equal(api.showsUpdateFailedBanner([]), false);
+  assert.equal(api.showsUpdateFailedBanner([{ state: "failed", error_kind: "network", created_at: 1 }]), false);
+  assert.equal(api.showsUpdateFailedBanner([uf(10)]), true);
+  // 其他未完成 / 失敗的工作不影響
+  assert.equal(api.showsUpdateFailedBanner([uf(10), { state: "running", error_kind: null, created_at: 11 }, { state: "failed", error_kind: "private", created_at: 12 }]), true);
+  // 之前成功過不算（問題是後來才發生的）；之後成功（例如重試成功）就收起
+  assert.equal(api.showsUpdateFailedBanner([done(5), uf(10)]), true);
+  assert.equal(api.showsUpdateFailedBanner([uf(10), done(11)]), false);
+  // 成功後又再次 update_failed → 再顯示
+  assert.equal(api.showsUpdateFailedBanner([uf(10), done(11), uf(12)]), true);
+  // 順序無關（卡片 Map 的順序與 created_at 可能不同）
+  assert.equal(api.showsUpdateFailedBanner([done(11), uf(10)]), false);
+  // 沒有 created_at 時當 0：同樣有失敗就顯示
+  assert.equal(api.showsUpdateFailedBanner([{ state: "failed", error_kind: "update_failed" }]), true);
 });

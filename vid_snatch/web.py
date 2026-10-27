@@ -84,10 +84,7 @@ def create_app(
     queue: JobQueue,
     host_actions: HostActionQueue,
     on_shutdown: Callable[[], None],
-    can_upgrade: bool = False,
 ) -> FastAPI:
-    """can_upgrade：宿主端能否藉 POST /api/rebuild 升級元件（Windows 的 -Upgrade 流程）；
-    Docker（Mac）只會重拉同一個映像檔，所以是 False。前端只在 True 時於失敗卡片顯示「更新」（#27）。"""
     app = FastAPI()
     sep = "\\" if "\\" in host_output_dir else "/"
 
@@ -210,8 +207,7 @@ def create_app(
         return EventSourceResponse(stream(), ping=15)
 
     def _settings(output_dir: str) -> dict:
-        return {"output_dir": output_dir, **config.read_settings(config_dir), "version": __version__,
-                "can_upgrade": can_upgrade}
+        return {"output_dir": output_dir, **config.read_settings(config_dir), "version": __version__}
 
     @app.get("/api/settings")
     def get_settings():

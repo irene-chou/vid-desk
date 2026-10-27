@@ -56,6 +56,8 @@ $ServerProc = $null
 # ── 設定檔 ──────────────────────────────────
 $ConfigDir = Join-Path $Root 'config'
 $ConfigFile = Join-Path $ConfigDir 'config'
+# 後端在「自動更新下載工具後仍失敗」時寫下的標記（vid_snatch/jobs.py 的 UPGRADE_MARKER，#31）；下次啟動比照 -Upgrade 更新所有元件
+$UpgradeMarker = Join-Path $ConfigDir 'upgrade-pending'
 # 「音樂」資料夾可能被 OneDrive 或使用者搬到別處，以系統回報的位置為準
 $MusicDir = [Environment]::GetFolderPath('MyMusic')
 if (-not $MusicDir) { $MusicDir = Join-Path $env:USERPROFILE 'Music' }
@@ -370,8 +372,6 @@ function Start-Server {
     $env:VS_HOST_OUTPUT_DIR = $OutputDir
     $env:VS_CONFIG_DIR = $ConfigDir
     $env:VS_BIND = '127.0.0.1'
-    # 告知後端這裡能升級元件（按失敗卡片的「更新」→ /api/rebuild → 結束碼 10 → 啟動器以 -Upgrade 重裝）；Docker 不設
-    $env:VS_CAN_UPGRADE = '1'
     # 輸出被導向記錄檔時 Python 預設用 cp1252 等系統編碼，改成 UTF-8 中文才不會變亂碼
     $env:PYTHONUTF8 = '1'
     # 去人聲模型已預載，執行時只讀 Hugging Face 快取、不連網
@@ -719,6 +719,14 @@ if (Test-ServerRunning) {
     exit 0
 }
 
+# 標記檔存在就當作 -Upgrade（#31）：上次下載失敗、自動更新下載工具也沒救回來，多半是 deno 或其他套件過舊。
+# 先刪標記再升級：升級中途失敗（例如離線）會 exit 1，下次啟動走一般流程（installed-commit 已清掉，會重裝套件），
+# 不會每次啟動都重跑整套升級；若升級後下載仍失敗，後端會再寫一次標記。
+if (Test-Path -LiteralPath $UpgradeMarker) {
+    Write-Host '上次下載失敗，這次啟動會先更新所有元件…'
+    try { Remove-IfExists $UpgradeMarker } catch { Write-Host "無法清除更新標記：$UpgradeMarker" }
+    $Upgrade = $true
+}
 Ensure-Installed $Commit -Upgrade:$Upgrade
 if (-not (Start-Server)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'

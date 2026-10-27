@@ -84,14 +84,19 @@ class Job:
         }
 
 
-# 自動更新 yt-dlp 後仍是 extractor_outdated：error_kind 改成 update_failed，前端據此決定要不要給「更新」鈕（#27）
+# 自動更新 yt-dlp 後仍是 extractor_outdated：error_kind 改成 update_failed，前端據此在頁面層級提示「請稍後重開」（#27、#31）
 UPDATE_FAILED_MESSAGE = "下載工具更新後仍無法下載"
+# 同時在 config 目錄寫下這個標記檔：vid-snatch.ps1 下次啟動看到就比照 -Upgrade 升級所有相依套件（deno、Python 套件）後刪掉。
+# Docker / Mac 寫了也無害（Mac 每次啟動已拉最新 image，沒有人讀它）
+UPGRADE_MARKER = "upgrade-pending"
 
 
 class JobQueue:
-    def __init__(self, output_dir: Path, backend: Backend = core):
+    def __init__(self, output_dir: Path, backend: Backend = core, upgrade_marker: Path | None = None):
+        """upgrade_marker：工作以 update_failed 結束時要寫的標記檔（通常是 <config 目錄>/upgrade-pending）；None 就不寫。"""
         self.output_dir = Path(output_dir)
         self.backend = backend
+        self.upgrade_marker = Path(upgrade_marker) if upgrade_marker else None
         self._jobs: dict[str, Job] = {}
         self._pending: queue.Queue = queue.Queue()
         self._subscribers: list[queue.Queue] = []
@@ -283,10 +288,21 @@ class JobQueue:
             except VidSnatchError as e2:
                 if e2.kind != "extractor_outdated":
                     raise
+                self._mark_upgrade_pending()
                 raise VidSnatchError("update_failed", UPDATE_FAILED_MESSAGE, e2.detail) from e2
 
         self._update(job, state="done", step=job.step_total, step_name=job.steps[-1], percent=100.0,
                      finished_at=time.time(), eta_seconds=None, message="", detail="", error_kind=None)
+
+    def _mark_upgrade_pending(self) -> None:
+        """寫下 upgrade-pending 標記（內容不重要，有檔就算）；寫不進去只影響下次啟動要不要升級，不讓工作因此多出別的錯誤。"""
+        if self.upgrade_marker is None:
+            return
+        try:
+            self.upgrade_marker.parent.mkdir(parents=True, exist_ok=True)
+            self.upgrade_marker.write_text("1", encoding="utf-8")
+        except OSError:
+            pass
 
     def _attempt(self, job: Job) -> None:
         """取得標題與檔名並產出所有輸出；YouTube 改版時整段（含取標題）會在更新 yt-dlp 後重跑一次。"""
