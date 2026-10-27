@@ -1,5 +1,5 @@
 ﻿# vid-snatch 一鍵啟動腳本 (Windows)
-# 請雙擊 vid-snatch.bat，它會呼叫這個檔案。
+# 請雙擊 vid-snatch-Windows.bat，它會呼叫這個檔案。
 # 注意：此檔需存成 UTF-8 with BOM，Windows PowerShell 5.1 才能正確讀取中文。
 # 由 windows\launcher.ps1 以 -Commit <sha 或 local>（及更新時的 -Upgrade）呼叫；
 # 這個檔案所在的資料夾即要安裝的原始碼（含 pyproject.toml）。
@@ -337,7 +337,7 @@ function Wait-Health {
             ForEach-Object { Write-Host $_ }
     }
     Write-Host ''
-    # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
+    # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
     exit 1
 }
 
@@ -529,7 +529,7 @@ function Invoke-Rebuild {
     Write-Host '正在更新…'
     if (-not (Stop-VidSnatch)) {
         Write-Host '無法停止 vid-snatch，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
-        # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
+        # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
         exit 1
     }
     exit 10
@@ -607,7 +607,7 @@ if (Test-ServerRunning) {
 Ensure-Installed $Commit -Upgrade:$Upgrade
 if (-not (Start-Server)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
-    # 由 vid-snatch.bat 的 `if errorlevel 1 pause` 停住視窗
+    # 由 vid-snatch-Windows.bat 的 `if errorlevel 1 pause` 停住視窗
     exit 1
 }
 

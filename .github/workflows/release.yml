@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 組出下載包
+        run: bash scripts/build-package.sh "$RUNNER_TEMP/pkg"
+
+      - name: 移動 latest tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+      - name: 建立或更新 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view latest > /dev/null 2>&1; then
+            gh release edit latest --prerelease=false --latest
+          else
+            gh release create latest --title "vid-snatch" \
+              --notes "最新版下載包。Windows 雙擊 vid-snatch-Windows.bat，Mac 雙擊 vid-snatch-Mac.command。" \
+              --latest
+          fi
+          gh release upload latest "$RUNNER_TEMP/pkg/vid-snatch.zip" --clobber

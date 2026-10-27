@@ -11,6 +11,9 @@ CONTAINER="vid-snatch"
 DEFAULT_PORT=8080
 PORT="$DEFAULT_PORT"
 PROJECT_DIR="$(pwd)"
+# 下載包配置：原始碼在 files/；repo 配置：原始碼就在這個資料夾
+BUILD_DIR="$PROJECT_DIR"
+[ -f "$PROJECT_DIR/files/Dockerfile" ] && BUILD_DIR="$PROJECT_DIR/files"
 
 # ── 設定檔 ──────────────────────────────────
 CONFIG_DIR="$HOME/.config/vid-snatch"
@@ -75,7 +78,7 @@ ensure_image() {
         echo ""
         echo "首次使用，正在建置環境（約 3-5 分鐘）…"
         echo ""
-        docker build -t "$IMAGE_LOCAL" .
+        docker build -t "$IMAGE_LOCAL" "$BUILD_DIR"
         echo ""
         echo "建置完成！"
     fi
