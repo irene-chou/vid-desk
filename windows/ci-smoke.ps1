@@ -500,6 +500,9 @@ Start-Scenario '8. 更新'
 $env:VS_UPDATE_API = $MockApi
 $upd = Start-Launcher 'launcher-update'
 $info8 = Wait-Server $upd 120
+# #27：Windows 啟動的伺服器要回 can_upgrade=true，失敗卡片才會有「更新」鈕
+$settings8 = Get-Text "http://127.0.0.1:$($info8.port)/api/settings"
+if ($settings8 -notmatch '"can_upgrade":\s*true') { Fail "GET /api/settings 應含 can_upgrade=true：$settings8" }
 Invoke-Post $info8.port '/api/rebuild' ''
 $info8b = Wait-Server $upd (20 * 60) $info8.pid 2
 Assert-ProcessGone $info8.pid

@@ -130,8 +130,10 @@ def test_title_outdated_twice_fails_with_message(q):
     job = q.add("https://youtu.be/a", "mp3")
     run_until_idle(q)
     assert job.state == "failed" and q.backend.updated == 1
-    assert job.message == "更新後仍無法下載，請稍後再試"
-    assert job.error_kind == "extractor_outdated"
+    # #27：自動更新後仍失敗是獨立的 error_kind，前端據此顯示「更新」鈕，不比對中文訊息
+    assert job.message == "下載工具更新後仍無法下載"
+    assert job.error_kind == "update_failed"
+    assert job.to_dict()["error_kind"] == "update_failed"
     assert job.detail == "Unable to extract title"
     assert job.step == 1 and job.step_name == "取得資訊"  # 失敗停在哪一步
     assert [o.state for o in job.outputs] == ["failed"]

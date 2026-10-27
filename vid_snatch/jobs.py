@@ -84,7 +84,8 @@ class Job:
         }
 
 
-UPDATE_FAILED_MESSAGE = "更新後仍無法下載，請稍後再試"
+# 自動更新 yt-dlp 後仍是 extractor_outdated：error_kind 改成 update_failed，前端據此決定要不要給「更新」鈕（#27）
+UPDATE_FAILED_MESSAGE = "下載工具更新後仍無法下載"
 
 
 class JobQueue:
@@ -282,7 +283,7 @@ class JobQueue:
             except VidSnatchError as e2:
                 if e2.kind != "extractor_outdated":
                     raise
-                raise VidSnatchError("extractor_outdated", UPDATE_FAILED_MESSAGE, e2.detail) from e2
+                raise VidSnatchError("update_failed", UPDATE_FAILED_MESSAGE, e2.detail) from e2
 
         self._update(job, state="done", step=job.step_total, step_name=job.steps[-1], percent=100.0,
                      finished_at=time.time(), eta_seconds=None, message="", detail="", error_kind=None)
