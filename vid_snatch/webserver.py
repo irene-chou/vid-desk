@@ -9,13 +9,8 @@ import uvicorn
 
 from vid_snatch import core
 from vid_snatch.hostactions import HostActionQueue
-from vid_snatch.jobs import JobQueue
+from vid_snatch.jobs import UPGRADE_MARKER, JobQueue
 from vid_snatch.web import create_app
-
-
-def can_upgrade_from_env(environ=os.environ) -> bool:
-    """由啟動腳本告知能否升級元件：vid-snatch.ps1 啟動伺服器時設 VS_CAN_UPGRADE=1；Docker / Mac 不設即 False。"""
-    return environ.get("VS_CAN_UPGRADE") == "1"
 
 
 def run_web(port: int) -> None:
@@ -26,7 +21,8 @@ def run_web(port: int) -> None:
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    queue = JobQueue(Path(output_dir))
+    # 自動更新 yt-dlp 後仍失敗時寫 <config>/upgrade-pending，vid-snatch.ps1 下次啟動據此升級所有相依套件（#31）
+    queue = JobQueue(Path(output_dir), upgrade_marker=Path(config_dir) / UPGRADE_MARKER)
     queue.start()
     host_actions = HostActionQueue(started_at=time.monotonic())
 
@@ -37,7 +33,6 @@ def run_web(port: int) -> None:
         queue=queue,
         host_actions=host_actions,
         on_shutdown=lambda: setattr(server, "should_exit", True),
-        can_upgrade=can_upgrade_from_env(),
     )
     server = uvicorn.Server(
         uvicorn.Config(app, host=bind, port=port, log_level="warning")

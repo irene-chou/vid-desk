@@ -26,6 +26,8 @@ $AppDir = Join-Path $Root 'app'
 $CommitMarker = Join-Path $Root 'state\installed-commit'
 $RepairFlag = Join-Path $Root 'state\repair'
 $ConfigFile = Join-Path $Root 'config\config'
+# 後端在「自動更新下載工具後仍失敗」時寫的標記；vid-snatch.ps1 看到就比照 -Upgrade 更新後刪掉（#31）
+$UpgradeMarker = Join-Path $Root 'config\upgrade-pending'
 $TorchDir = Join-Path $Root 'torch'
 $Sentinel = Join-Path $AppDir 'ci-sentinel.txt'
 # 與 vid-snatch.ps1 的預設下載資料夾算法相同（系統的「音樂」資料夾，不受 USERPROFILE 影響）
@@ -500,9 +502,9 @@ Start-Scenario '8. 更新'
 $env:VS_UPDATE_API = $MockApi
 $upd = Start-Launcher 'launcher-update'
 $info8 = Wait-Server $upd 120
-# #27：Windows 啟動的伺服器要回 can_upgrade=true，失敗卡片才會有「更新」鈕
+# #31：can_upgrade 已移除（#27 的「更新」鈕不再有）
 $settings8 = Get-Text "http://127.0.0.1:$($info8.port)/api/settings"
-if ($settings8 -notmatch '"can_upgrade":\s*true') { Fail "GET /api/settings 應含 can_upgrade=true：$settings8" }
+if ($settings8 -match '"can_upgrade"') { Fail "GET /api/settings 不應再有 can_upgrade：$settings8" }
 Invoke-Post $info8.port '/api/rebuild' ''
 $info8b = Wait-Server $upd (20 * 60) $info8.pid 2
 Assert-ProcessGone $info8.pid
@@ -510,26 +512,41 @@ if ((Read-Text $CommitMarker) -ne $Sha) { Fail "更新後 state\installed-commit
 Stop-AndVerify $upd $info8b '更新後的啟動器'
 Assert-OutputContains 'launcher-update' '正在更新元件'
 
-# ── 9. 中斷續裝 ─────────────────────────────
-Start-Scenario '9. 中斷續裝'
+# ── 9. 標記檔觸發升級 ───────────────────────
+Start-Scenario '9. 標記檔觸發升級'
+# 後端在「自動更新下載工具後仍失敗」時會寫 config\upgrade-pending（#31）；這裡直接寫檔模擬。
+# 啟動器查到的版本沒變（不會傳 -Upgrade），主腳本單靠標記就要走升級流程，升級後刪掉標記
+New-Item -ItemType Directory -Force -Path (Split-Path $UpgradeMarker -Parent) | Out-Null
+[System.IO.File]::WriteAllText($UpgradeMarker, '1')
+$mark = Start-Launcher 'launcher-marker'
+$info9 = Wait-Server $mark (20 * 60)
+if (Test-Path -LiteralPath $UpgradeMarker) { Fail '升級後 config\upgrade-pending 應被刪除' }
+if ((Read-Text $CommitMarker) -ne $Sha) { Fail "標記檔升級後 state\installed-commit 是「$(Read-Text $CommitMarker)」，預期 $Sha" }
+Stop-AndVerify $mark $info9 '標記檔升級的啟動器'
+Assert-OutputContains 'launcher-marker' '上次下載失敗，這次啟動會先更新所有元件'
+Assert-OutputContains 'launcher-marker' '正在更新元件'
+Write-Host 'config\upgrade-pending 已刪除'
+
+# ── 10. 中斷續裝 ────────────────────────────
+Start-Scenario '10. 中斷續裝'
 Remove-IfExists (Join-Path $Root 'venv')
 Remove-IfExists $CommitMarker
 Write-Host '已刪除 venv 與 state\installed-commit'
 $env:VS_SOURCE = 'local'
 $resume = Start-Launcher 'launcher-resume'
-$info9 = Wait-Server $resume (25 * 60)
-Stop-AndVerify $resume $info9 '續裝啟動器'
+$info10 = Wait-Server $resume (25 * 60)
+Stop-AndVerify $resume $info10 '續裝啟動器'
 Remove-Item Env:\VS_SOURCE
 
-# ── 10. 啟動失敗後修復 ──────────────────────
-Start-Scenario '10. 啟動失敗後修復'
+# ── 11. 啟動失敗後修復 ──────────────────────
+Start-Scenario '11. 啟動失敗後修復'
 # 模擬上次健康檢查失敗留下的狀態
 Remove-IfExists $CommitMarker
 [System.IO.File]::WriteAllText($RepairFlag, '1')
 $env:VS_UPDATE_API = $OfflineApi
 $repair = Start-Launcher 'launcher-repair'
-$info10 = Wait-Server $repair (15 * 60)
-Stop-AndVerify $repair $info10 '修復啟動器'
+$info11 = Wait-Server $repair (15 * 60)
+Stop-AndVerify $repair $info11 '修復啟動器'
 Assert-OutputContains 'launcher-repair' '正在修復元件'
 if (Test-Path -LiteralPath $RepairFlag) { Fail '成功啟動後 state\repair 應被清掉' }
 if ((Read-Text $CommitMarker) -ne $Sha) { Fail "修復後 state\installed-commit 是「$(Read-Text $CommitMarker)」，預期 $Sha" }
@@ -540,36 +557,36 @@ Write-Host ''
 Write-Host "備份 $Root → $Backup"
 Invoke-Robocopy $Root $Backup @('/XD', (Join-Path $Root 'cache'))
 
-# ── 11. 解除安裝（自訂下載資料夾） ──────────
-Start-Scenario '11. 解除安裝（自訂下載資料夾）'
+# ── 12. 解除安裝（自訂下載資料夾） ──────────
+Start-Scenario '12. 解除安裝（自訂下載資料夾）'
 New-Item -ItemType Directory -Force -Path $CustomOutputDir | Out-Null
 $customFile = Join-Path $CustomOutputDir '歌曲.mp3'
 [System.IO.File]::WriteAllText($customFile, 'x')
 New-Item -ItemType Directory -Force -Path (Split-Path $ConfigFile -Parent) | Out-Null
 [System.IO.File]::WriteAllText($ConfigFile, "output_dir=$CustomOutputDir`n")
 $un1 = Start-Launcher 'launcher-uninstall-custom'
-$info11 = Wait-Server $un1 120
-$settings = Get-Text "http://127.0.0.1:$($info11.port)/api/settings"
+$info12 = Wait-Server $un1 120
+$settings = Get-Text "http://127.0.0.1:$($info12.port)/api/settings"
 Write-Host "GET /api/settings：$settings"
-Invoke-Post $info11.port '/api/uninstall' '{"delete_downloads": true}'
+Invoke-Post $info12.port '/api/uninstall' '{"delete_downloads": true}'
 Wait-Exit $un1 300 '解除安裝的啟動器'
-Assert-ProcessGone $info11.pid
+Assert-ProcessGone $info12.pid
 if (Test-Path -LiteralPath $Root) { Fail "解除安裝後 $Root 仍存在" }
 if (-not (Test-Path -LiteralPath $customFile)) { Fail "自訂下載資料夾不應被刪除：$customFile" }
 Assert-OutputContains 'launcher-uninstall-custom' '解除安裝完成'
 Write-Host "$Root 已刪除，自訂下載資料夾保留"
 
-# ── 12. 解除安裝（預設下載資料夾） ──────────
-Start-Scenario '12. 解除安裝（預設下載資料夾）'
+# ── 13. 解除安裝（預設下載資料夾） ──────────
+Start-Scenario '13. 解除安裝（預設下載資料夾）'
 Invoke-Robocopy $Backup $Root @()
 Remove-IfExists $ConfigFile
 New-Item -ItemType Directory -Force -Path $DefaultOutputDir | Out-Null
 [System.IO.File]::WriteAllText((Join-Path $DefaultOutputDir '歌曲.mp3'), 'x')
 $un2 = Start-Launcher 'launcher-uninstall-default'
-$info12 = Wait-Server $un2 120
-Invoke-Post $info12.port '/api/uninstall' '{"delete_downloads": true}'
+$info13 = Wait-Server $un2 120
+Invoke-Post $info13.port '/api/uninstall' '{"delete_downloads": true}'
 Wait-Exit $un2 300 '解除安裝的啟動器'
-Assert-ProcessGone $info12.pid
+Assert-ProcessGone $info13.pid
 if (Test-Path -LiteralPath $Root) { Fail "解除安裝後 $Root 仍存在" }
 if (Test-Path -LiteralPath $DefaultOutputDir) { Fail "預設下載資料夾應被刪除：$DefaultOutputDir" }
 Assert-OutputContains 'launcher-uninstall-default' '已刪除下載檔案'

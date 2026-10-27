@@ -102,6 +102,9 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .brand h1 { font: inherit; margin: 0; }
   .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
   .brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }
+  /* 頁面層級提示（#31）：任一工作自動更新下載工具後仍失敗時，顯示在頁首下方、輸入區上方，跨兩欄；沒有按鈕 */
+  .banner { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: var(--r-card); font-size: 0.88rem; color: var(--fg); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .banner .ic { color: var(--warn); margin-top: 0.25em; }
 
   /* ===== 按鈕 ===== */
   button { font: inherit; font-size: 0.88rem; padding: 7px 14px; border-radius: var(--r-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
@@ -204,10 +207,7 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .bar.indet i { width: 30%; animation: indet 1.2s ease-in-out infinite alternate; }
   @keyframes indet { from { transform: translateX(-20%); } to { transform: translateX(260%); } }
   .pct { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .acts { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
-  /* 動作列的文字鈕（失敗卡片的「更新」，#27）與 .ibtn.sm 同高 */
-  .acts button.txt { height: 28px; padding: 0 10px; font-size: 0.8rem; border-radius: 7px; }
-  .job .notice { font-size: 0.8rem; }
+  .acts { display: flex; gap: 6px; justify-content: flex-end; }
   .err { font-size: 0.8rem; color: var(--bad); display: flex; gap: 6px; align-items: flex-start; }
   .err .ic { margin-top: 0.2em; }
   .detail { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); margin: 0; font-family: var(--mono); font-size: 0.72rem; background: var(--sub); border-radius: 7px; padding: 8px 10px; }
@@ -277,6 +277,8 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>
     <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
+
+  <div id="update-failed" class="banner" role="status" hidden><svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。</span></div>
 
   <section class="panel" id="input" aria-label="新工作">
     <div class="field">
@@ -530,25 +532,18 @@ function timingText(base, nowMs) {
   return `${fmtDuration(elapsed)} / ~${fmtDuration(total)}`;
 }
 
-// 自動更新下載工具後仍失敗（後端 error_kind = update_failed，#27）：訊息依宿主端能否升級元件補上引導，
-// 「更新」鈕只在能升級（GET /api/settings 的 can_upgrade）時出現；判斷只看欄位，不比對中文訊息
+// 自動更新下載工具後仍失敗（後端 error_kind = update_failed，#27 / #31）：判斷只看欄位，不比對中文訊息
 function isUpdateFailed(job) {
   return job.state === "failed" && job.error_kind === "update_failed";
 }
 
-function failureText(job, canUpgrade) {
-  const base = job.message || "發生錯誤";
-  if (!isUpdateFailed(job)) return base;
-  return `${base}，${canUpgrade === true ? "可能需要更新其他元件" : "請稍後再試，或等待新版"}`;
-}
-
-function showsUpdateButton(job, canUpgrade) {
-  return isUpdateFailed(job) && canUpgrade === true;
-}
-
-// 更新會重新啟動並中斷工作：還有排隊中 / 進行中的工作就要先確認
-function hasActiveJobs(states) {
-  return states.some((s) => s === "queued" || s === "running");
+// 頁面層級橫幅（#31）：頁面上還有這類失敗的工作、且在它之後沒有任何工作成功過，就提示使用者稍後重開 vid-snatch。
+// 之後有工作成功（例如重試成功）代表問題已解，橫幅收起；「清除已完成」把這類卡片移掉也會收起
+function showsUpdateFailedBanner(jobs) {
+  const failed = jobs.filter(isUpdateFailed);
+  if (failed.length === 0) return false;
+  const latest = Math.max(...failed.map((j) => j.created_at || 0));
+  return !jobs.some((j) => j.state === "done" && (j.created_at || 0) > latest);
 }
 // @@card-fns-end
 
@@ -562,7 +557,6 @@ const jobsEl = $("jobs");
 const doneEl = $("jobs-done");
 
 let outputState = defaultOutputState();
-let canUpgrade = false;   // GET /api/settings 的 can_upgrade：失敗卡片的「更新」鈕只在 true 時出現（#27）
 
 // 每個網址的標題狀態：{ status: "loading" | "ok" | "failed", value, touched, input }
 const titles = new Map();
@@ -942,22 +936,13 @@ async function startJobs() {
 // 卡片結構照 docs/design/console-mockup.html；資料欄位見 docs/superpowers/specs/2026-10-27-console-ui-design.md。
 // 每則 SSE 都整張重畫（replaceChildren），展開中的「查看詳情」以 expandedDetails 記住。
 
-function cardMessage(card, className, ...children) {
-  let box = card.querySelector(".card-action-msg");
+function cardActionError(card, message) {
+  let box = card.querySelector(".card-action-error");
   if (!box) {
-    box = el("div", "");
+    box = el("div", "err card-action-error");
     card.append(box);
   }
-  box.className = `${className} card-action-msg`;
-  box.replaceChildren(...children);
-}
-
-function cardActionError(card, message) {
-  cardMessage(card, "err", icon("alert"), document.createTextNode(message));
-}
-
-function cardNotice(card, message) {
-  cardMessage(card, "notice", document.createTextNode(message));
+  box.replaceChildren(icon("alert"), document.createTextNode(message));
 }
 
 function isFinished(state) {
@@ -1037,27 +1022,6 @@ function retryButton(job, card) {
   }, "sm");
 }
 
-// 「更新」（有文字）：自動更新下載工具後仍失敗、且宿主端能升級元件時才有，與「重試」並存。
-// 走既有的 POST /api/rebuild（Windows 以結束碼 10 請啟動器重裝元件並重開瀏覽器）；有其他工作在跑先用 ask() 確認
-function updateButton(job, card) {
-  const btn = el("button", "txt", document.createTextNode("更新"));
-  btn.type = "button";
-  btn.addEventListener("click", async () => {
-    if (hasActiveJobs([...cards.values()].map((c) => c.dataset.state))) {
-      const choice = await ask("更新會重新啟動 vid-snatch，中斷進行中與排隊中的工作", [
-        { label: "中斷並更新", value: "update" },
-      ]);
-      if (choice === null) return;
-    }
-    btn.disabled = true;
-    try {
-      await postJson("/api/rebuild");
-      cardNotice(card, "更新中，瀏覽器會自動重新開啟");
-    } catch (e) { btn.disabled = false; cardActionError(card, e.message || "發生錯誤"); }
-  });
-  return btn;
-}
-
 function buildCardBody(job, card) {
   const parts = [];
 
@@ -1091,7 +1055,7 @@ function buildCardBody(job, card) {
   }
 
   if (job.state === "failed") {
-    parts.push(el("div", "err", icon("alert"), document.createTextNode(failureText(job, canUpgrade))));
+    parts.push(el("div", "err", icon("alert"), document.createTextNode(job.message || "發生錯誤")));
     const acts = el("div", "acts");
     if (job.detail) {
       const pre = el("pre", "detail");
@@ -1106,7 +1070,6 @@ function buildCardBody(job, card) {
       acts.append(eye);
       parts.push(pre);
     }
-    if (showsUpdateButton(job, canUpgrade)) acts.append(updateButton(job, card));
     acts.append(retryButton(job, card));
     parts.push(acts);
   }
@@ -1135,17 +1098,28 @@ function renderJob(job) {
   card.className = `job ${job.state}`;
   card.dataset.id = job.id;
   card.dataset.state = job.state;
+  // 頁面層級橫幅（#31）要看所有卡片的失敗類型與先後
+  card.dataset.errorKind = job.error_kind || "";
+  card.dataset.createdAt = String(job.created_at || 0);
   card.replaceChildren(...buildCardBody(job, card));
   refreshQueueChrome();
   syncTimer();
 }
 
-// 空狀態、「已完成」分隔線的顯示
+// 頁面上所有卡片的狀態摘要（橫幅判斷用；資料存在 dataset，重畫不用再查後端）
+function cardJobs() {
+  return [...cards.values()].map((c) => ({
+    state: c.dataset.state, error_kind: c.dataset.errorKind || null, created_at: Number(c.dataset.createdAt) || 0,
+  }));
+}
+
+// 空狀態、「已完成」分隔線、頁面層級橫幅（#31）的顯示
 function refreshQueueChrome() {
   const empty = $("jobs-empty");
   empty.hidden = jobsEl.childElementCount > 0;
   empty.textContent = cards.size > 0 ? "沒有進行中的工作" : "還沒有下載工作";
   $("done-divider").hidden = doneEl.childElementCount === 0;
+  $("update-failed").hidden = !showsUpdateFailedBanner(cardJobs());
 }
 
 // 「已耗時 / 預估總時」每秒由前端更新；沒有進行中的卡片就停掉計時器
@@ -1247,7 +1221,6 @@ async function loadSettings() {
     const data = await getJson("/api/settings");
     $("output-dir").textContent = data.output_dir;
     showVersion(data.version);
-    canUpgrade = data.can_upgrade === true;
     outputState = applySettings(outputState, data);
     renderOutputs();
   } catch (e) {
@@ -1331,11 +1304,9 @@ $("clear-done").addEventListener("click", clearDone);
 
 renderTheme(currentTheme());
 renderOutputs();
-// 先讀設定再載入工作：失敗卡片要用 can_upgrade 決定有沒有「更新」鈕（loadSettings 自己接錯誤，一定 resolve）
-loadSettings().then(() => {
-  loadJobs();
-  connectEvents();
-});
+loadSettings();
+loadJobs();
+connectEvents();
 </script>
 </body>
 </html>

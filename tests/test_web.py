@@ -1,11 +1,14 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from vid_snatch import __version__
 from vid_snatch.web import create_app
-from vid_snatch.jobs import JobQueue
+from vid_snatch.jobs import UPGRADE_MARKER, JobQueue
 from vid_snatch.hostactions import HostActionQueue
 from tests.test_jobs import FakeBackend, run_until_idle
 
+ROOT = Path(__file__).parent.parent
 H = {"X-Vid-Snatch": "1"}
 MP3 = {"audio": {"versions": ["original"]}}
 ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "model": "htdemucs"},
@@ -14,7 +17,8 @@ ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "
 @pytest.fixture
 def env(tmp_path):
     out = tmp_path / "out"; out.mkdir(); cfg = tmp_path / "cfg"
-    q = JobQueue(out, backend=FakeBackend()); q.start()
+    # 與 webserver.run_web 相同：標記檔放在 config 目錄（#31）
+    q = JobQueue(out, backend=FakeBackend(), upgrade_marker=cfg / UPGRADE_MARKER); q.start()
     h = HostActionQueue(started_at=0.0)
     shutdown = []
     app = create_app(out, cfg, "/Users/me/Music/vid-snatch", q, h, on_shutdown=lambda: shutdown.append(1))
@@ -93,7 +97,8 @@ def test_settings_write(env):
 
 def test_settings_defaults(env):
     c, *_ = env
-    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "can_upgrade": False,
+    # #31：不再有 can_upgrade（#27 的「更新」鈕已移除）
+    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
                                              "demucs_model": "htdemucs_ft", "video_max_height": None,
                                              "version": __version__}
 
@@ -104,36 +109,41 @@ def test_settings_reports_package_version(env):
     r = c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()
     assert r["version"] == __version__
 
-def test_settings_can_upgrade_follows_create_app_flag(tmp_path):
-    # #27：能否升級元件由 create_app 的 can_upgrade 決定（webserver 從 VS_CAN_UPGRADE 讀）；預設 False
-    out = tmp_path / "out"; out.mkdir()
-    q = JobQueue(out, backend=FakeBackend())
-    app = create_app(out, tmp_path / "cfg", str(out), q, HostActionQueue(started_at=0.0), on_shutdown=lambda: None,
-                     can_upgrade=True)
-    c = TestClient(app, base_url="http://localhost")
-    assert c.get("/api/settings").json()["can_upgrade"] is True
-    assert c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()["can_upgrade"] is True
+def test_can_upgrade_removed_everywhere():
+    # #31：can_upgrade / VS_CAN_UPGRADE 整條拿掉（API、create_app、webserver、vid-snatch.ps1、ci-smoke）
+    import inspect
+    from vid_snatch import web, webserver
+    assert "can_upgrade" not in inspect.signature(create_app).parameters
+    assert not hasattr(webserver, "can_upgrade_from_env")
+    for mod in (web, webserver):
+        assert "can_upgrade" not in inspect.getsource(mod)
+    for name in ("vid-snatch.ps1", "windows/ci-smoke.ps1"):
+        assert "CAN_UPGRADE" not in (ROOT / name).read_text(encoding="utf-8-sig"), name
 
-def test_can_upgrade_from_env():
-    from vid_snatch.webserver import can_upgrade_from_env
-    assert can_upgrade_from_env({"VS_CAN_UPGRADE": "1"}) is True
-    assert can_upgrade_from_env({"VS_CAN_UPGRADE": "0"}) is False
-    assert can_upgrade_from_env({}) is False
-
-def test_update_failed_job_exposes_error_kind(env):
-    c, q, *_ = env
+def test_update_failed_job_exposes_error_kind_and_writes_upgrade_marker(env):
+    c, q, h, cfg, _ = env
+    assert not (cfg / UPGRADE_MARKER).exists()
     q.backend.title_failures = 2
     c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3}, headers=H)
     run_until_idle(q)
     job = c.get("/api/jobs").json()["jobs"][0]
     assert job["state"] == "failed" and job["error_kind"] == "update_failed"
     assert job["message"] == "下載工具更新後仍無法下載"
+    # #31：同時寫下 <config>/upgrade-pending，vid-snatch.ps1 下次啟動據此升級所有相依套件
+    assert (cfg / UPGRADE_MARKER).is_file()
+    # 設定檔不受影響（config 目錄之前不存在，標記檔自己建目錄）
+    assert c.get("/api/settings").json()["audio_format"] == "mp3"
+
+def test_webserver_wires_upgrade_marker_into_config_dir():
+    import inspect
+    from vid_snatch import webserver
+    assert "upgrade_marker=Path(config_dir) / UPGRADE_MARKER" in inspect.getsource(webserver.run_web)
 
 def test_settings_details_partial_update_without_restart(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
     assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
-                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__, "can_upgrade": False,
+                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__,
                  "restart_required": False}
     r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
     assert r["audio_format"] == "flac" and r["demucs_model"] == "htdemucs" and r["video_max_height"] is None

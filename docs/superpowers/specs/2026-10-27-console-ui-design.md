@@ -40,7 +40,8 @@
 
 - 桌面：雙欄 grid（5:6），左欄輸入面板，右欄排隊。手機（容器 ≤ 760px）堆疊，輸入在上。
 - 頂部：左側 logo + 名稱 + 版本號（`v0.3.1`，等寬小字、`--muted` 色，來自 `GET /api/settings` 的 `version`；取不到就不顯示）；右側設定圖示鈕。#25 之後不再有四個狀態計數，排隊卡片本身已足夠。
-- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束；「主題」三段式（沿用 `.seg`）：跟隨系統（預設）/ 淺色 / 深色，切換即時生效、存 `localStorage`（key `vid-snatch.theme`，不經後端，#26）；「進階」收合：只有解除安裝（「更新 vid-snatch」已移除，改放在失敗卡片上，#27），狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
+- 頁面層級橫幅（#31）：頁首下方、輸入區上方，跨兩欄（`#update-failed`，`role="status"`，`--warn` 色底框 + 警示圖示，沒有按鈕）。任一工作 `error_kind == "update_failed"` 時顯示「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。」，不分平台。純函式 `showsUpdateFailedBanner(jobs)`：有這類失敗、且 `created_at` 在它之後沒有任何 `done` 的工作才顯示；之後有工作成功（例如重試成功）或「清除已完成」把這類卡片移掉就收起。每次卡片重畫 / 清除時由 `refreshQueueChrome()` 重算，資料來自卡片 `dataset`（`errorKind`、`createdAt`）。
+- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束；「主題」三段式（沿用 `.seg`）：跟隨系統（預設）/ 淺色 / 深色，切換即時生效、存 `localStorage`（key `vid-snatch.theme`，不經後端，#26）；「進階」收合：只有解除安裝（「更新 vid-snatch」已於 #27 移除；#31 之後頁面上沒有任何「更新」鈕，改由頁面橫幅請使用者重開），狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
 - 左欄由上到下：網址（textarea，右上貼上鈕）、輸出（兩張選項卡）、檔名（每個網址一列，上方小字為網址）、開始。
 - 右欄：「進行中與排隊」區；「已完成」分隔線（右側清除鈕）；卡片依新到舊。
 
@@ -52,8 +53,8 @@
 2. 細節列（圖示 + 等寬小字）：來源網址（可點，開新分頁）、YouTube 原標題、完成後顯示已存檔名與大小。
 3. 輸出列：每個輸出檔一顆膠囊，含類型圖示、檔名尾綴、自己的狀態圖示（時鐘等待 / 轉圈處理中 / 勾完成 / 叉失敗）。
 4. 進行中：進度條 + 百分比 + `已耗時 / 預估總時`。
-5. 動作列（右對齊圖示鈕）：排隊中「取消」；完成「顯示檔案」；失敗「查看詳情」「重試」；已取消「重試」。失敗且 `error_kind == "update_failed"` 且 `can_upgrade` 為 true 時，「重試」左邊多一顆有文字的「更新」鈕（#27，見下）。
-6. 失敗訊息：警示圖示 + 一句中文說明（`message`）。`update_failed` 時前端依 `can_upgrade` 補上引導：能升級「下載工具更新後仍無法下載，可能需要更新其他元件」；不能「下載工具更新後仍無法下載，請稍後再試，或等待新版」。判斷只看 `error_kind`，不比對訊息文字。
+5. 動作列（右對齊圖示鈕）：排隊中「取消」；完成「顯示檔案」；失敗「查看詳情」「重試」；已取消「重試」。`update_failed` 也一樣，沒有額外按鈕（#27 的「更新」鈕於 #31 移除）。
+6. 失敗訊息：警示圖示 + 一句中文說明（`message`，原樣顯示；`update_failed` 的引導放在頁面橫幅，見「版面」）。
 
 實作細節（#11 定案）：
 
@@ -61,7 +62,7 @@
 - 細節列的「已存檔名與大小」每個完成的輸出一列（失敗工作裡已完成的輸出也列）。
 - 耗時：收到 job 時記下 `elapsed_seconds` / `eta_seconds` 與本機時刻，之後前端每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 `started_at`（避免時鐘差）。預估總時 = 收到時的已耗時 + `eta_seconds`，下一則 SSE 前不會往下掉；已耗時超過預估就顯示相同數字。頁面上沒有進行中的卡片時計時器停掉。
 - 分組：`#jobs`（進行中與排隊）與 `#jobs-done`（已完成）兩個 `ul`；工作變成 `done` / `failed` / `cancelled` 時卡片搬到已完成區最上面。「清除已完成」只在前端隱藏（記住 id，SSE 重連重播時不畫回來），後端不刪。
-- 「更新」（#27）：按下時若還有 `queued` / `running` 的工作，先以 `ask()`「更新會重新啟動 vid-snatch，中斷進行中與排隊中的工作」確認（選項「中斷並更新」/ 取消）；確認後 `POST /api/rebuild`，卡片顯示「更新中，瀏覽器會自動重新開啟」（綠色 `.notice`），失敗則紅字顯示錯誤並恢復按鈕。頁面啟動先 `GET /api/settings`（取 `can_upgrade`）再載入工作與 SSE，卡片才不會漏畫這顆鈕。
+- 讓「重開」真的有用（#31）：工作以 `update_failed` 結束時，後端（`JobQueue`，由 `webserver.run_web` 傳入路徑）在 config 目錄寫標記檔 `upgrade-pending`（`vid_snatch.jobs.UPGRADE_MARKER`）。`vid-snatch.ps1` 啟動時若看到標記，先刪掉標記再比照 `-Upgrade` 升級所有相依套件（deno、Python 套件）；先刪再升級是為了升級失敗（例如離線）時下次啟動走一般流程，不會每次都重跑整套升級，若升級後仍失敗後端會再寫一次。`launcher.ps1`、`/api/rebuild`、結束碼 10 流程不動；Docker / Mac 也會寫標記但沒有人讀，無害（Mac 每次啟動已拉最新 image）。
 - 已取消（`cancelled`）：卡片併入「已完成」區，狀態文字「已取消」、圖示 x、色條與排隊相同（`--line`），動作列只有「重試」（重試會建立新工作）；頂部計數不算已取消。
 - 「查看詳情」展開狀態以 id 記住，SSE 重畫卡片後維持展開。
 
@@ -153,7 +154,7 @@ Query：`filename`（必填）、`versions`（逗號分隔，例如 `original,in
 | `percent` | number \| null | 目前步驟的百分比 0–100；null 表示不定進度。完成時 100 |
 | `message` | string | 失敗時的中文說明 |
 | `detail` | string | 失敗時的原始錯誤（「查看詳情」） |
-| `error_kind` | string \| null | `private` `age` `unavailable` `live` `extractor_outdated` `update_failed` `network` `unknown`。`update_failed`（#27）：遇到 `extractor_outdated` 自動 `pip -U yt-dlp` 重試一次後仍是 `extractor_outdated`，此時 `message` 為「下載工具更新後仍無法下載」，前端據此決定要不要給「更新」鈕 |
+| `error_kind` | string \| null | `private` `age` `unavailable` `live` `extractor_outdated` `update_failed` `network` `unknown`。`update_failed`（#27）：遇到 `extractor_outdated` 自動 `pip -U yt-dlp` 重試一次後仍是 `extractor_outdated`，此時 `message` 為「下載工具更新後仍無法下載」，前端據此顯示頁面層級橫幅（#31），後端同時寫 `upgrade-pending` 標記檔 |
 | `result_path` | string \| null | 第一個完成輸出的完整路徑（「顯示檔案」用；向下相容） |
 | `title` | string \| null | YouTube 原標題，第 1 步結束後才有（即使使用者自訂檔名也會取） |
 | `display_name` | string \| null | 實際採用的檔名主體（已處理重名後綴），第 1 步結束後才有 |
@@ -190,10 +191,10 @@ SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位�
 ### `GET /api/settings` / `POST /api/settings`
 
 ```json
-{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null, "version": "0.3.1", "can_upgrade": false }
+{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null, "version": "0.3.1" }
 ```
 
-- `GET` 回傳上述欄位；`version` 是 `vid_snatch.__version__`（唯讀，頁首顯示用；`POST` 送來忽略）。`can_upgrade`（唯讀，#27）：宿主端能否藉 `POST /api/rebuild` 升級元件（deno、yt-dlp 等）。由啟動腳本決定：`vid-snatch.ps1` 啟動伺服器時設環境變數 `VS_CAN_UPGRADE=1`（按「更新」→ `/api/rebuild` → 結束碼 10 → 啟動器以 `-Upgrade` 重裝），`webserver.py` 讀到才是 `true`；Docker（Mac）不設即 `false`——Mac 的 rebuild 只會重拉同一個 `:latest` 映像檔，不會更新元件，所以不顯示「更新」。不靠猜測執行環境，`launcher.ps1` 不必改。`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
+- `GET` 回傳上述欄位；`version` 是 `vid_snatch.__version__`（唯讀，頁首顯示用；`POST` 送來忽略）。#27 加的 `can_upgrade` 與 `VS_CAN_UPGRADE` 已於 #31 移除。`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
 - `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的欄位（含 `version`）+ `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
 - 「版本」（原曲 / 伴奏 / 人聲）不存設定，每次載入回到預設「原曲」。
 - 設定檔 `config` 每行 `key=value`，`output_dir` 永遠在第一行；bash / bat / ps1 啟動腳本只讀那一行，其餘行會被略過。

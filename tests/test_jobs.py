@@ -138,6 +138,47 @@ def test_title_outdated_twice_fails_with_message(q):
     assert job.step == 1 and job.step_name == "取得資訊"  # 失敗停在哪一步
     assert [o.state for o in job.outputs] == ["failed"]
 
+def test_update_failed_writes_upgrade_marker(tmp_path):
+    # #31：自動更新後仍失敗 → 在指定路徑寫標記檔（目錄不存在就建）；vid-snatch.ps1 下次啟動據此升級所有相依套件
+    from vid_snatch.jobs import UPGRADE_MARKER
+    assert UPGRADE_MARKER == "upgrade-pending"
+    marker = tmp_path / "cfg" / UPGRADE_MARKER
+    q = JobQueue(tmp_path, backend=FakeBackend(), upgrade_marker=marker); q.start()
+    try:
+        q.backend.title_failures = 2
+        job = q.add("https://youtu.be/a", "mp3")
+        run_until_idle(q)
+        assert job.error_kind == "update_failed" and marker.is_file()
+    finally:
+        q.stop()
+
+def test_other_failures_do_not_write_upgrade_marker(tmp_path):
+    class Private(FakeBackend):
+        def download_audio(self, *a, **k):
+            raise VidSnatchError("private", "這是私人影片", "Private video")
+
+    marker = tmp_path / "cfg" / "upgrade-pending"
+    q = JobQueue(tmp_path, backend=Private(), upgrade_marker=marker); q.start()
+    try:
+        # 更新一次就成功：不是 update_failed
+        q.backend.title_failures = 1
+        ok = q.add("https://youtu.be/a", "mp4")
+        run_until_idle(q)
+        assert ok.state == "done" and not marker.exists()
+        # 一般失敗也不寫
+        bad = q.add("https://youtu.be/b", "mp3")
+        run_until_idle(q)
+        assert bad.state == "failed" and bad.error_kind == "private" and not marker.exists()
+    finally:
+        q.stop()
+
+def test_no_upgrade_marker_when_not_configured(q, tmp_path):
+    # 預設（例如測試、CLI）不寫任何標記檔
+    q.backend.title_failures = 2
+    q.add("https://youtu.be/a", "mp3")
+    run_until_idle(q)
+    assert q.upgrade_marker is None and not list(tmp_path.rglob("upgrade-pending"))
+
 def test_display_name_is_resolved_title(q):
     job = q.add("https://youtu.be/a", "mp3", filename=None)
     assert job.to_dict()["display_name"] is None
