@@ -83,5 +83,7 @@ def test_outputs_state_machine_in_node():
     node = shutil.which("node")
     if not node:
         pytest.skip("沒有 node")
-    r = subprocess.run([node, "--test", str(ROOT / "tests/outputs_state.test.mjs")], capture_output=True, text=True, timeout=120)
+    # 測試名稱是中文；Windows 預設編碼解不開會在 reader thread 炸掉，明確用 UTF-8
+    r = subprocess.run([node, "--test", str(ROOT / "tests/outputs_state.test.mjs")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
