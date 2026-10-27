@@ -1,8 +1,9 @@
 name: release
 
+# 發版：推一個 v* 標籤（例如 v0.3.0）。平常 push main 不會動到使用者端。
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -14,31 +15,62 @@ concurrency:
 
 jobs:
   package:
+    # workflow_dispatch 只允許選在 v* 標籤上重跑（例如上傳失敗時）
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: 確認標籤與 pyproject.toml 的版本一致
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::標籤 $TAG 與 pyproject.toml 的 version = \"$version\" 不一致，請先改版本號再重新打標籤"
+            exit 1
+          fi
+
       - name: 組出下載包
         run: bash scripts/build-package.sh "$RUNNER_TEMP/pkg"
 
-      - name: 移動 latest tag
+      - name: 建立 release 並標記為 latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          else
+            gh release create "$TAG" --title "vid-snatch $TAG" --latest --generate-notes \
+              --notes "下載 vid-snatch.zip 並解壓縮：Windows 雙擊 vid-snatch-Windows.bat，Mac 雙擊 vid-snatch-Mac.command。"
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/pkg/vid-snatch.zip" --clobber
+
+      # 舊版 windows/launcher.ps1（使用者手上無法更新的那一份）每次啟動查 git 標籤 latest 指到的 commit，
+      # 所以發版時把 latest 移到這個 commit，舊啟動器才會拿到新版；平常 push main 不再移動。
+      - name: 移動 latest 標籤（舊版啟動器用）
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest
+          # ^{commit}：v* 標籤若是附註標籤，latest 也要指到它底下的 commit，commits/latest 才會回 sha
+          git tag -f latest "$(git rev-parse "$TAG^{commit}")"
           git push -f origin latest
 
-      - name: 建立或更新 release
+      # 以前每次 push main 都重傳一個名為 latest 的 release；新的 v* release 建好後把它刪掉，
+      # GitHub 的「latest release」與 releases/latest/download/vid-snatch.zip 就只會指到 v* release。
+      # 只刪 release 物件、保留 git 標籤 latest（上一步才剛移好給舊啟動器用）。
+      - name: 清掉舊的 latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view latest > /dev/null 2>&1; then
-            gh release edit latest --prerelease=false --latest
-          else
-            gh release create latest --title "vid-snatch" \
-              --notes "最新版下載包。Windows 雙擊 vid-snatch-Windows.bat，Mac 雙擊 vid-snatch-Mac.command。" \
-              --latest
+            gh release delete latest --yes
           fi
-          gh release upload latest "$RUNNER_TEMP/pkg/vid-snatch.zip" --clobber
+          latest=$(gh release view --json tagName --jq .tagName)
+          echo "GitHub latest release：$latest"
+          if [ "$latest" != "$TAG" ]; then
+            echo "::error::latest release 是 $latest，預期 $TAG"
+            exit 1
+          fi

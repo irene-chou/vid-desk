@@ -1,8 +1,9 @@
 ﻿# vid-snatch 穩定啟動器 (Windows)
-# 由 vid-snatch-Windows.bat 呼叫：把 GitHub latest 標籤（release.yml 每次 main 更新時移動）的原始碼放到 %LOCALAPPDATA%\vid-snatch\app\，
-# 再執行那一份的 vid-snatch.ps1。這個檔案發佈後幾乎不會再更新，請保持精簡。
+# 由 vid-snatch-Windows.bat 呼叫：把 GitHub 最新 release（推 v* 標籤時由 release.yml 建立）的原始碼放到
+# %LOCALAPPDATA%\vid-snatch\app\，再執行那一份的 vid-snatch.ps1。這個檔案發佈後幾乎不會再更新，請保持精簡。
 # 與 vid-snatch.ps1 的約定（見該檔開頭）：封存檔根目錄有 vid-snatch.ps1，接受 -Commit / -Upgrade，
 # 結束碼 10 代表要更新，其他照原樣傳回給 .bat。
+# 舊版啟動器查的是 git 標籤 latest 指到的 commit sha；release.yml 發版時仍會移動該標籤，所以舊版也只在發版時更新。
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
 
 $ProgressPreference = 'SilentlyContinue'
@@ -18,8 +19,9 @@ $Root = Join-Path $env:LOCALAPPDATA 'vid-snatch'
 $AppDir = Join-Path $Root 'app'
 # launcher.ps1 所在資料夾的上一層即原始碼資料夾（repo 根目錄，或下載包的 files\）
 $BundleDir = Split-Path $PSScriptRoot -Parent
+# 回傳 JSON，取其中的 tag_name（例如 v0.3.0）；CI 冒煙測試用 VS_UPDATE_API 換成本機假端點
 $UpdateApi = $env:VS_UPDATE_API
-if (-not $UpdateApi) { $UpdateApi = "https://api.github.com/repos/$Repo/commits/latest" }
+if (-not $UpdateApi) { $UpdateApi = "https://api.github.com/repos/$Repo/releases/latest" }
 
 # 使用者看到的最外層資料夾（下載包配置為 files\ 的上一層），供主腳本顯示
 $LaunchDir = $BundleDir
@@ -30,22 +32,25 @@ function Remove-IfExists([string]$path) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
 }
 
-function Get-LatestCommit {
+# 最新 release 的標籤名稱（例如 v0.3.0）；只接受能直接放進網址與檔名的字元
+function Get-LatestTag {
     $r = Invoke-WebRequest -UseBasicParsing -Uri $UpdateApi -TimeoutSec 10 -UserAgent 'vid-snatch' `
-        -Headers @{ Accept = 'application/vnd.github.sha' }
-    $sha = ([System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())).Trim()
-    if ($sha -notmatch '^[0-9a-f]{40}$') { throw "unexpected response: $sha" }
-    return $sha
+        -Headers @{ Accept = 'application/vnd.github+json' }
+    $json = [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
+    $tag = "$((ConvertFrom-Json $json).tag_name)".Trim()
+    if ($tag -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$') { throw "unexpected tag_name: $tag" }
+    return $tag
 }
 
+# app\.commit：上次安裝的版本（新版啟動器寫標籤名稱；舊版寫 40 碼 sha，第一次會被視為不同版本而重裝一次）
 function Get-AppCommit {
     $file = Join-Path $AppDir '.commit'
     if (-not (Test-Path -LiteralPath $file)) { return '' }
     return ([System.IO.File]::ReadAllText($file)).Trim()
 }
 
-# 下載 $sha 的封存檔並換成新的 app\；失敗時清掉暫存並丟出例外，舊的 app\ 保持原樣
-function Install-Source([string]$sha) {
+# 下載 $tag 的封存檔並換成新的 app\；失敗時清掉暫存並丟出例外，舊的 app\ 保持原樣
+function Install-Source([string]$tag) {
     $zip = Join-Path $Root 'app.zip'
     $part = "$zip.part"
     $new = Join-Path $Root 'app.new'
@@ -57,17 +62,18 @@ function Install-Source([string]$sha) {
         Remove-IfExists $new
         Remove-IfExists $old
 
-        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$Repo/archive/$sha.zip" `
+        # archive/<ref>.zip 接受標籤名稱或 commit sha（CI 冒煙測試傳的是 sha），不走 API、沒有流量限制
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$Repo/archive/$tag.zip" `
             -OutFile $part -TimeoutSec 300 -UserAgent 'vid-snatch'
         Move-Item -LiteralPath $part -Destination $zip
         Expand-Archive -LiteralPath $zip -DestinationPath $new
 
-        # 封存檔內有一層 vid-snatch-<sha>\，取其內容
+        # 封存檔內有一層 vid-snatch-<版本>\（標籤 v0.3.0 會是 vid-snatch-0.3.0），取其內容
         $inner = @(Get-ChildItem -LiteralPath $new -Directory)
         if ($inner.Count -ne 1) { throw 'unexpected archive layout' }
         $src = $inner[0].FullName
         if (-not (Test-Path -LiteralPath (Join-Path $src 'vid-snatch.ps1'))) { throw 'vid-snatch.ps1 missing' }
-        [System.IO.File]::WriteAllText((Join-Path $src '.commit'), $sha)
+        [System.IO.File]::WriteAllText((Join-Path $src '.commit'), $tag)
 
         # 先把舊版移開再換上新版，換不成就還原，避免留下半刪的 app\
         if (Test-Path -LiteralPath $AppDir) { Move-Item -LiteralPath $AppDir -Destination $old }
@@ -84,18 +90,18 @@ function Install-Source([string]$sha) {
     }
 }
 
-# 回傳 @{ Dir = 原始碼資料夾; Commit = sha 或 'local' }
+# 回傳 @{ Dir = 原始碼資料夾; Commit = 標籤名稱、舊安裝留下的 sha，或 'local' }
 function Get-SourceDir {
     if ($env:VS_SOURCE -eq 'local') { return @{ Dir = $BundleDir; Commit = 'local' } }
 
     Write-Host '正在檢查更新…'
     try {
-        $sha = Get-LatestCommit
+        $tag = Get-LatestTag
         # app\ 已是這個版本但主腳本不見了（被防毒或手動刪掉）也要重新下載
-        if ($sha -ne (Get-AppCommit) -or -not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) {
-            Install-Source $sha
+        if ($tag -ne (Get-AppCommit) -or -not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) {
+            Install-Source $tag
         }
-        return @{ Dir = $AppDir; Commit = $sha }
+        return @{ Dir = $AppDir; Commit = $tag }
     } catch {
         # 離線或下載失敗是正常情況，不印錯誤，改用既有的原始碼
     }

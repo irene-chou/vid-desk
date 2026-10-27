@@ -15,7 +15,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 - Windows 使用者只需：下載 ZIP、解壓縮、雙擊 `vid-snatch.bat`。不需要管理員權限、不需要虛擬化、不需要事先安裝任何東西（Python、Docker、ffmpeg 都不用）。
 - 網頁介面、使用流程、按鈕、錯誤訊息與 macOS 版完全相同。
 - 現有功能全部保留：MP3、去人聲 MP3、MP4、顯示檔案、更換資料夾、結束、更新、解除安裝、yt-dlp 自動更新。
-- 每次啟動自動檢查更新，取得的程式版本與 macOS 從 GHCR 拉到的映像檔一致（都是 GitHub `main` 最新版；Windows 經由 release.yml 每次 main 更新時移動的 `latest` 標籤取得）。
+- 每次啟動自動檢查更新，取得的程式版本與 macOS 從 GHCR 拉到的映像檔一致（都是最新的 release 標籤 `v*`；Windows 查 GitHub `releases/latest`，macOS 拉只在推 `v*` 標籤時才更新的 `:latest` 映像檔。原本以 `main` 最新 commit 為準，後來改為以 release 標籤為準，見 issue #8）。
 - 離線或 GitHub 連不上時，已安裝過的使用者仍可啟動。
 
 **非目標**
@@ -64,8 +64,10 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 - 更新範圍包含 **PowerShell 腳本本身**，不只 Python 套件，否則腳本出 bug 永遠修不到已解壓的使用者（我的決定）。
 - 結構分兩層：
   - 使用者解壓縮資料夾裡的 `vid-snatch.bat` 只是穩定的小啟動器，幾乎不再修改。
-  - 它每次啟動查詢 GitHub `latest` 標籤（`release.yml` 在每次 `main` 更新時移動它）指向的 commit，下載該 commit 的封存檔，解到 `%LOCALAPPDATA%\vid-snatch\app\`，然後執行**那一份**的 `vid-snatch.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
-- 判斷「已是最新」：比對 `latest` 標籤的 commit 與上次安裝的 commit，相同就跳過下載與重裝。追蹤標籤而非 `main`，日後可改成只在 CI 通過後才移動標籤，而不必更新已發佈的啟動器（Ruling F）。標籤尚未建立時查詢失敗，走下面的備援。
+  - 它每次啟動查詢 GitHub 最新 release（`releases/latest` 的 `tag_name`，由 `release.yml` 在推 `v*` 標籤時建立），下載該標籤的封存檔，解到 `%LOCALAPPDATA%\vid-snatch\app\`，然後執行**那一份**的 `vid-snatch.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
+- 判斷「已是最新」：比對最新 release 的標籤名稱與上次安裝時寫在 `app\.commit` 的值，相同就跳過下載與重裝。`vid-snatch.ps1` 的 `-Commit` 參數與 `state\installed-commit` 也存同一個值，它只是不透明字串。
+- 向下相容：第一版啟動器查的是 git 標籤 `latest` 指到的 commit sha（當時 `release.yml` 每次 `main` 更新都移動它），`.commit` 與 `installed-commit` 存 sha。改以 release 為準後，`release.yml` 只在發版時把 `latest` 標籤移到該版本，舊啟動器因此也只在發版時更新；舊安裝留下的 sha 與新啟動器拿到的標籤名稱不同，第一次會重裝一次 `app\` 與套件，之後兩邊都是標籤名稱，不會反覆重裝。
+- 標籤或 release 尚未建立時查詢失敗，走下面的備援。
 - 取得失敗時：若 `app\` 已有安裝就直接用；若從未安裝，改用解壓縮資料夾裡的 `vid-snatch.ps1` 與原始碼；兩者都不行才顯示錯誤。
 - 依賴版本不鎖定，與目前 Dockerfile 一樣在安裝時解析最新相容版本（我的決定，不改動 macOS 建置）。
   - 平常啟動、程式碼有新 commit 時：重裝 vid-snatch 套件，但已安裝且仍滿足需求的依賴不升級，所以不會每次重下 PyTorch。
@@ -97,7 +99,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 使用者要求：執行檔要好找、Windows 和 Mac 分得清楚，但只要一個下載包。
 
 - 不再請使用者按 GitHub 的 `Code` → `Download ZIP`（解出來是整個 repo，執行檔混在 Dockerfile、tests、docs 之間）。
-- 改由 GitHub Actions 在每次 `main` 更新時產生一個 `vid-snatch.zip`，放在 GitHub Release（固定的 `latest/download` 網址），README 直接連過去。
+- 改由 GitHub Actions 在推 `v*` 標籤發版時產生一個 `vid-snatch.zip`，放在該版本的 GitHub Release 並標記為 latest（固定的 `releases/latest/download` 網址），README 直接連過去。
 - 解開後最外層只有三樣東西：
   - `vid-snatch-Windows.bat`
   - `vid-snatch-Mac.command`
