@@ -182,3 +182,33 @@ def test_foreign_host_is_403(env, method):
 def test_local_host_allowed(env, host):
     c, *_ = env
     assert c.get("/api/health", headers={"Host": host}).status_code == 200
+
+
+# ---- DELETE /api/jobs/{id}（取消） ----
+
+def test_cancel_requires_csrf_header(env):
+    c, *_ = env
+    assert c.delete("/api/jobs/abc").status_code == 403
+
+def test_cancel_queued_job(env):
+    c, q, *_ = env
+    q.stop()  # 不讓 worker 跑，工作留在排隊
+    jobs = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b"], "outputs": MP3}, headers=H).json()["jobs"]
+    r = c.delete(f"/api/jobs/{jobs[0]['id']}", headers=H)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "cancelled" and body["queue_position"] is None and body["finished_at"] is not None
+    listed = {j["id"]: j for j in c.get("/api/jobs").json()["jobs"]}
+    assert listed[jobs[0]["id"]]["state"] == "cancelled"
+    assert listed[jobs[1]["id"]]["queue_position"] == 1
+    # 再取消一次 → 409
+    r = c.delete(f"/api/jobs/{jobs[0]['id']}", headers=H)
+    assert r.status_code == 409 and r.json() == {"message": "只能取消排隊中的工作"}
+
+def test_cancel_finished_job_is_409_and_unknown_is_404(env):
+    c, q, *_ = env
+    job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3, "filename": "s"}, headers=H).json()["jobs"][0]
+    run_until_idle(q)
+    r = c.delete(f"/api/jobs/{job['id']}", headers=H)
+    assert r.status_code == 409 and r.json()["message"] == "只能取消排隊中的工作"
+    assert c.delete("/api/jobs/nope", headers=H).status_code == 404

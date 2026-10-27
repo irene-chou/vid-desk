@@ -94,7 +94,7 @@ def create_app(
     async def require_header(request: Request, call_next):
         if not _host_allowed(request.headers.get("host")):
             return _error(403, "forbidden")
-        if request.method == "POST" and request.headers.get("X-Vid-Snatch") != "1":
+        if request.method in ("POST", "DELETE") and request.headers.get("X-Vid-Snatch") != "1":
             return _error(403, "forbidden")
         return await call_next(request)
 
@@ -167,6 +167,16 @@ def create_app(
             return queue.retry(job_id).to_dict()
         except KeyError:
             return _error(404, "找不到這個工作")
+
+    @app.delete("/api/jobs/{job_id}")
+    def cancel_job(job_id: str):
+        """取消排隊中的工作；只對 queued 生效，其他狀態回 409。"""
+        try:
+            return queue.cancel(job_id).to_dict()
+        except KeyError:
+            return _error(404, "找不到這個工作")
+        except ValueError as e:
+            return _error(409, str(e))
 
     @app.post("/api/jobs/{job_id}/reveal")
     def reveal_job(job_id: str):
