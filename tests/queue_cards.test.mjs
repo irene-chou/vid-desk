@@ -16,7 +16,7 @@ const api = vm.runInThisContext(
      STATE_ICONS, OUTPUT_STATE_ICONS, OUTPUT_PILL_CLASS, KIND_ICONS, FINISHED_STATES }; })()`,
 );
 
-const AUDIO = { audio: { versions: ["original", "instrumental", "vocals"], format: "mp3", bitrate: 192, model: "htdemucs_ft" }, video: null };
+const AUDIO = { audio: { versions: ["original", "instrumental", "vocals"], format: "mp3", model: "htdemucs_ft" }, video: null };
 
 test("耗時 m:ss，超過一小時 h:mm:ss", () => {
   assert.equal(api.fmtDuration(41), "0:41");
@@ -35,12 +35,12 @@ test("檔案大小：小於 10 保留一位小數，否則整數", () => {
   assert.equal(api.fmtSize(-1), "");
 });
 
-test("膠囊文字：版本名 + 尾綴 + 細項摘要；無損不顯示位元率；影片顯示畫質上限", () => {
-  assert.equal(api.outputLabel({ kind: "original", ext: "mp3" }, AUDIO), "原曲.mp3 · 192k");
-  assert.equal(api.outputLabel({ kind: "instrumental", ext: "mp3" }, AUDIO), "伴奏.mp3 · 192k");
-  assert.equal(api.outputLabel({ kind: "vocals", ext: "flac" }, { audio: { ...AUDIO.audio, format: "flac", bitrate: 320 } }), "人聲.flac");
-  // 尾綴以 output.ext 為準（m4a 分離結果也是 .m4a）
-  assert.equal(api.outputLabel({ kind: "instrumental", ext: "m4a" }, { audio: { ...AUDIO.audio, format: "m4a", bitrate: 320 } }), "伴奏.m4a · 320k");
+test("膠囊文字：版本名 + 尾綴（#18 之後不顯示位元率）；影片顯示畫質上限", () => {
+  assert.equal(api.outputLabel({ kind: "original", ext: "mp3" }, AUDIO), "原曲.mp3");
+  assert.equal(api.outputLabel({ kind: "instrumental", ext: "mp3" }, AUDIO), "伴奏.mp3");
+  assert.equal(api.outputLabel({ kind: "vocals", ext: "flac" }, { audio: { ...AUDIO.audio, format: "flac" } }), "人聲.flac");
+  // 尾綴以 output.ext 為準（m4a 分離結果也是 .m4a）；舊 job 殘留的 bitrate 也不顯示
+  assert.equal(api.outputLabel({ kind: "instrumental", ext: "m4a" }, { audio: { ...AUDIO.audio, format: "m4a", bitrate: 320 } }), "伴奏.m4a");
   assert.equal(api.outputLabel({ kind: "video", ext: "mp4" }, { audio: null, video: { max_height: 1080 } }), ".mp4 · 1080p");
   assert.equal(api.outputLabel({ kind: "video", ext: "mp4" }, { audio: null, video: { max_height: null } }), ".mp4");
   assert.equal(api.outputLabel({ kind: "original", ext: "mp3" }, undefined), "原曲.mp3");
