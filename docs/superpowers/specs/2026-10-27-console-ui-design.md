@@ -52,8 +52,17 @@
 2. 細節列（圖示 + 等寬小字）：來源網址（可點，開新分頁）、YouTube 原標題、完成後顯示已存檔名與大小。
 3. 輸出列：每個輸出檔一顆膠囊，含類型圖示、檔名尾綴、自己的狀態圖示（時鐘等待 / 轉圈處理中 / 勾完成 / 叉失敗）。
 4. 進行中：進度條 + 百分比 + `已耗時 / 預估總時`。
-5. 動作列（右對齊圖示鈕）：排隊中「取消」；完成「顯示檔案」；失敗「查看詳情」「重試」。
+5. 動作列（右對齊圖示鈕）：排隊中「取消」；完成「顯示檔案」；失敗「查看詳情」「重試」；已取消「重試」。
 6. 失敗訊息：警示圖示 + 一句中文說明。
+
+實作細節（#11 定案）：
+
+- 膠囊文字：音檔 `原曲.mp3 · 192k`（WAV / FLAC 不顯示位元率；`ext` 以 `output.ext` 為準，m4a 分離結果會是 `.mp3`），影片 `.mp4 · 1080p`（最佳畫質只有 `.mp4`）。膠囊狀態圖示只在工作執行中、完成或失敗時顯示；排隊中與已取消的卡片不顯示（全是時鐘沒有資訊）。
+- 細節列的「已存檔名與大小」每個完成的輸出一列（失敗工作裡已完成的輸出也列）。
+- 耗時：收到 job 時記下 `elapsed_seconds` / `eta_seconds` 與本機時刻，之後前端每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 `started_at`（避免時鐘差）。預估總時 = 收到時的已耗時 + `eta_seconds`，下一則 SSE 前不會往下掉；已耗時超過預估就顯示相同數字。頁面上沒有進行中的卡片時計時器停掉。
+- 分組：`#jobs`（進行中與排隊）與 `#jobs-done`（已完成）兩個 `ul`；工作變成 `done` / `failed` / `cancelled` 時卡片搬到已完成區最上面。「清除已完成」只在前端隱藏（記住 id，SSE 重連重播時不畫回來），後端不刪。
+- 已取消（`cancelled`）：卡片併入「已完成」區，狀態文字「已取消」、圖示 x、色條與排隊相同（`--line`），動作列只有「重試」（重試會建立新工作）；頂部計數不算已取消。
+- 「查看詳情」展開狀態以 id 記住，SSE 重畫卡片後維持展開。
 
 ## 視覺 token
 
@@ -77,9 +86,9 @@
 - 細項（格式、位元率、模型、畫質）存進設定檔並能讀回。
 - 音檔 M4A/WAV/FLAC、位元率、影片畫質上限、demucs 模型切換、人聲輸出。
 
-定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` 仍要帶 `X-Vid-Snatch: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
+定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` / `DELETE` 都要帶 `X-Vid-Snatch: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
 
-## 後端 API（#9 定案）
+## 後端 API（#9 定案，#11 補取消）
 
 ### 列舉
 
@@ -90,7 +99,7 @@
 | bitrate | `128` `192` `320` | 整數 kbps，預設 `192`；對 `wav` / `flac` 無作用 |
 | model | `htdemucs` `htdemucs_ft` | 分離模型（快速 / 高品質），預設 `htdemucs_ft`，兩個都已預載 |
 | max_height | `null` `1080` `720` | 影片畫質上限，`null` = 最佳 |
-| job.state | `queued` `running` `done` `failed` | 工作狀態（`cancelled` 保留給 #11 的取消端點） |
+| job.state | `queued` `running` `done` `failed` `cancelled` | 工作狀態；`cancelled` 只會由 `DELETE /api/jobs/{id}` 產生 |
 | output.state | `queued` `running` `done` `failed` | 單一輸出的狀態 |
 
 ### `POST /api/jobs`
@@ -136,7 +145,7 @@ Query：`filename`（必填）、`versions`（逗號分隔，例如 `original,in
 | `options` | object | 送進來的 `outputs`，補齊預設後的樣子：`{"audio": {"versions","format","bitrate","model"} \| null, "video": {"max_height"} \| null}`，膠囊摘要（`MP3 192k`、`1080p`）由此組出 |
 | `outputs` | Output[] | 每個輸出檔一筆，順序固定 原曲 → 伴奏 → 人聲 → 影片 |
 | `steps` | string[] | 這個工作的步驟名稱，依 `options` 動態組成，例如 `["取得資訊","下載","轉檔","分離","下載影片","合併"]`（只有影片時是 `["取得資訊","下載","合併"]`） |
-| `state` | `queued` `running` `done` `failed` | 工作狀態 |
+| `state` | `queued` `running` `done` `failed` `cancelled` | 工作狀態 |
 | `step` | int | 目前（或失敗時停住、完成時最後）的步驟，1-based；排隊中為 0 |
 | `step_total` | int | `steps.length` |
 | `step_name` | string | `steps[step-1]`；排隊中為空字串。卡片狀態文字即 `` `${step}/${step_total} · ${step_name}` `` |
@@ -150,7 +159,7 @@ Query：`filename`（必填）、`versions`（逗號分隔，例如 `original,in
 | `queue_position` | int \| null | 排隊中的順位，1 = 下一個；非排隊狀態為 null。前面的工作開跑時，後面每張卡都會收到一則更新 |
 | `created_at` | number | 建立時間，Unix 秒 |
 | `started_at` | number \| null | 開始執行時間（Unix 秒） |
-| `finished_at` | number \| null | 完成或失敗時間（Unix 秒） |
+| `finished_at` | number \| null | 完成、失敗或取消時間（Unix 秒） |
 | `elapsed_seconds` | number \| null | 序列化當下的耗時（`(finished_at ?? now) - started_at`）；進行中請用前端計時器以 `started_at` 每秒更新，不要等 SSE |
 | `eta_seconds` | number \| null | 目前步驟預估剩餘秒數，由該步已耗時與 `percent` 推算（分離時來自 demucs callback）；沒有進度或不在執行中為 null。「預估總時」= 已耗時 + `eta_seconds` |
 
@@ -167,7 +176,15 @@ Output：
 
 SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位（含任一輸出狀態、佇列順位）變動就推一整個 job。
 
-其他端點不變：`GET /api/info?url=`、`POST /api/jobs/{id}/retry`（沿用原工作的 `options`）、`POST /api/jobs/{id}/reveal`（用 `result_path`）。取消排隊中工作的端點由 #11 新增。
+其他端點不變：`GET /api/info?url=`、`POST /api/jobs/{id}/retry`（沿用原工作的 `options`；已取消的工作也能重試，會建立新工作）、`POST /api/jobs/{id}/reveal`（用 `result_path`）。
+
+### `DELETE /api/jobs/{id}`（#11 新增）
+
+取消排隊中的工作。需帶 `X-Vid-Snatch: 1`（與 `POST` 相同，防 CSRF）。
+
+- 只對 `state == "queued"` 生效：工作 `state` 改為 `cancelled`、`finished_at` 設為當下、`queue_position` 變 `null`，從佇列移除（worker 取到已取消的工作會直接跳過）；後面排隊中的工作 `queue_position` 往前補，每張都會收到一則 SSE 更新。回應 200 + 取消後的 job dict；同一則 job 也會經 `/api/events` 推送。
+- 其他狀態（執行中、完成、失敗、已取消）回 409 `{"message": "只能取消排隊中的工作"}`；找不到回 404 `{"message": "找不到這個工作"}`。
+- `outputs[].state` 維持 `queued`（輸出沒有 `cancelled` 狀態）；`started_at` / `elapsed_seconds` 為 `null`。
 
 ### `GET /api/settings` / `POST /api/settings`
 

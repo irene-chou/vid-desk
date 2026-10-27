@@ -11,7 +11,7 @@ HTML = (ROOT / "vid_snatch/static/index.html").read_text(encoding="utf-8")
 def test_required_ids_present():
     for i in ["urls", "paste", "out-audio", "out-video", "v-original", "v-instrumental", "v-vocals",
               "audio-adv", "audio-summary", "video-summary", "names", "names-row", "start", "start-count",
-              "jobs", "jobs-empty", "stat-queued", "stat-running", "stat-done", "stat-failed",
+              "jobs", "jobs-empty", "jobs-done", "done-divider", "clear-done", "stat-queued", "stat-running", "stat-done", "stat-failed",
               "settings-toggle", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall", "ask"]:
         assert f'id="{i}"' in HTML, i
 
@@ -75,15 +75,54 @@ def test_queue_dom_contract_for_cards():
     # #11 會接在這些約定上
     assert 'card.className = `job ${job.state}`' in HTML
     assert "card.dataset.id = job.id" in HTML and "card.dataset.state = job.state" in HTML
-    assert "jobsEl.prepend(card)" in HTML
-    for cls in [".job.running", ".job.done", ".job.failed", ".job.queued", ".jt", ".st", ".kv", ".outs", ".o", ".bar", ".pct", ".acts", ".err", ".divider"]:
+    # 新卡片放最上面；狀態變成完成 / 失敗 / 取消時搬到「已完成」那個 ul
+    assert "const list = listFor(job.state);" in HTML and "if (card.parentNode !== list) list.prepend(card);" in HTML
+    assert re.search(r"function listFor\(state\)\s*\{\s*return isFinished\(state\) \? doneEl : jobsEl;", HTML)
+    for cls in [".job.running", ".job.done", ".job.failed", ".job.queued", ".job.cancelled", ".jt", ".st", ".kv", ".outs", ".o", ".bar", ".pct", ".acts", ".err", ".divider"]:
         assert cls + " {" in HTML or cls + "," in HTML, cls
 
-def test_outputs_state_machine_in_node():
+def test_card_source_link_opens_new_tab_safely():
+    assert 'link.target = "_blank";' in HTML and 'link.rel = "noopener";' in HTML
+    assert "link.textContent = shortUrl(job.url);" in HTML
+
+def test_card_sections_present():
+    # 細節列、輸出膠囊、進度、失敗訊息、各狀態動作鈕
+    for fn in ["function buildDetails(job)", "function buildOutputs(job)", "function buildProgress(job)", "function retryButton(job, card)"]:
+        assert fn in HTML, fn
+    assert 'iconButton("x", "取消"' in HTML and "deleteJson(`/api/jobs/${job.id}`)" in HTML
+    assert 'iconButton("folder", "顯示檔案"' in HTML and 'iconButton("eye", "查看詳情"' in HTML and 'iconButton("retry", "重試"' in HTML
+    assert 'if (job.state === "queued") {' in HTML and 'if (job.state === "cancelled") {' in HTML
+    assert 'if (job.state === "done") {' in HTML and 'if (job.state === "failed") {' in HTML
+    assert 'icon(OUTPUT_STATE_ICONS[output.state], output.state === "running" ? "spin" : "")' in HTML
+
+def test_delete_sends_csrf_header():
+    assert re.search(r'function deleteJson\(path\)\s*\{\s*return sendJson\("DELETE", path\);', HTML)
+    assert re.search(r'function postJson\(path, body\)\s*\{\s*return sendJson\("POST", path, body\);', HTML)
+    assert re.search(r'method,\s*headers: \{ "Content-Type": "application/json", "X-Vid-Snatch": "1" \}', HTML)
+
+def test_timer_uses_received_elapsed_not_server_clock():
+    # 前端計時以收到 job 時的 elapsed_seconds 為基準，不拿本機時鐘去減伺服器 started_at
+    assert not re.search(r"Date\.now\(\)\s*/\s*1000\s*-\s*job\.started_at", HTML)
+    assert "timing.set(job.id, timingBase(job, performance.now()))" in HTML
+    # 沒有進行中的卡片就停掉計時器
+    assert "if (timing.size > 0 && timerId === null) timerId = setInterval(tickTimers, 1000);" in HTML
+    assert "else if (timing.size === 0 && timerId !== null) { clearInterval(timerId); timerId = null; }" in HTML
+
+def test_detail_expansion_survives_rerender():
+    assert "pre.hidden = !expandedDetails.has(job.id);" in HTML
+    assert "if (pre.hidden) expandedDetails.delete(job.id); else expandedDetails.add(job.id);" in HTML
+
+def test_clear_done_hides_in_frontend_only():
+    assert "function clearDone()" in HTML and "clearedIds.add(id);" in HTML
+    assert "if (clearedIds.has(job.id)) return;" in HTML
+    assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
+
+@pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs"])
+def test_pure_functions_in_node(script):
     node = shutil.which("node")
     if not node:
         pytest.skip("沒有 node")
     # 測試名稱是中文；Windows 預設編碼解不開會在 reader thread 炸掉，明確用 UTF-8
-    r = subprocess.run([node, "--test", str(ROOT / "tests/outputs_state.test.mjs")],
+    r = subprocess.run([node, "--test", str(ROOT / "tests" / script)],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
