@@ -10,6 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "yt-dlp>=2024.0.0",
     "demucs>=4.0.0",
+    # demucs 執行時需要，但沒有列在它自己的依賴裡
+    "numpy",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "sse-starlette>=2.0",

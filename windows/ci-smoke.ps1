@@ -323,18 +323,61 @@ Write-Host "server.json 的 pid 仍為 $($info1.pid)"
 Start-Scenario '3. 結束'
 Stop-AndVerify $first $info1 '第一個啟動器'
 
-# ── 4. 去人聲模型可直接載入 ─────────────────
-Start-Scenario '4. 去人聲模型可直接載入'
+# ── 4. 去人聲 ───────────────────────────────
+# 用 vid_snatch 自己的 remove_vocals 處理一段 2 秒的合成立體聲 WAV（不需網路），
+# 確認執行期依賴齊全、產生非空的 _no_vocals.mp3，且不會再下載模型
+Start-Scenario '4. 去人聲'
 $venvPython = Join-Path $Root 'venv\Scripts\python.exe'
+$vocalDir = Join-Path $TestHome '去人聲 測試'
+Remove-IfExists $vocalDir
+New-Item -ItemType Directory -Force -Path $vocalDir | Out-Null
+$vocalScript = Join-Path $SmokeLogDir 'remove_vocals_check.py'
+[System.IO.File]::WriteAllText($vocalScript, @'
+import math, struct, sys, time, wave
+from pathlib import Path
+
+from vid_snatch.core import remove_vocals
+
+work = Path(sys.argv[1])
+src = work / "測試 歌曲.wav"
+rate = 44100
+with wave.open(str(src), "wb") as w:
+    w.setnchannels(2)
+    w.setsampwidth(2)
+    w.setframerate(rate)
+    frames = bytearray()
+    for i in range(rate * 2):
+        t = i / rate
+        left = 0.3 * math.sin(2 * math.pi * 220 * t) + 0.2 * math.sin(2 * math.pi * 440 * t)
+        right = 0.3 * math.sin(2 * math.pi * 220 * t) + 0.2 * math.sin(2 * math.pi * 330 * t)
+        frames += struct.pack("<hh", int(left * 32767), int(right * 32767))
+    w.writeframes(bytes(frames))
+
+start = time.monotonic()
+out = remove_vocals(src, work)
+elapsed = time.monotonic() - start
+size = out.stat().st_size if out.exists() else -1
+print(f"remove_vocals: {out} ({size} bytes, {elapsed:.1f} s)")
+sys.exit(0 if size > 0 else 2)
+'@, (New-Object System.Text.UTF8Encoding($false)))
 $filesBefore = Get-FileList $TorchDir
+# 與 Start-Server 相同：bin\ 在 PATH 最前面（demucs 用 ffmpeg 讀檔）、TORCH_HOME 指向 $Root\torch
+$savedPath = $env:PATH
+$env:PATH = "$(Join-Path $Root 'bin');$env:PATH"
 $env:TORCH_HOME = $TorchDir
 $env:PYTHONUTF8 = '1'
 $ErrorActionPreference = 'Continue'
-& $venvPython -c "from demucs.api import Separator; Separator(model='htdemucs_ft'); print('htdemucs_ft loaded')" | Out-Host
+& $venvPython -I $vocalScript $vocalDir | Out-Host
 $code = $LASTEXITCODE
 $ErrorActionPreference = 'Stop'
+# 還原環境，後面的啟動器才是在測 vid-snatch.ps1 自己的設定
+$env:PATH = $savedPath
 Remove-Item Env:\TORCH_HOME
-if ($code -ne 0) { Fail "載入 htdemucs_ft 失敗，結束碼 $code" }
+Remove-Item Env:\PYTHONUTF8
+if ($code -ne 0) { Fail "remove_vocals 失敗，結束碼 $code" }
+$mp3 = @(Get-ChildItem -LiteralPath $vocalDir -Filter '*_no_vocals.mp3' -File)
+if ($mp3.Count -ne 1 -or $mp3[0].Length -le 0) { Fail "$vocalDir 沒有非空的 _no_vocals.mp3" }
+Write-Host "已產生 $($mp3[0].Name)（$($mp3[0].Length) bytes）"
 $filesAfter = Get-FileList $TorchDir
 if ($filesAfter -ne $filesBefore) {
     Fail "載入模型時 $TorchDir 有變動（不應再下載）。之前：`n$filesBefore`n之後：`n$filesAfter"

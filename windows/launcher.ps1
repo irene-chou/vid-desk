@@ -109,7 +109,8 @@ function Get-SourceDir {
 }
 
 # 主腳本結束碼：0 正常、1 失敗、10 要求更新（以 -Upgrade 重新取原始碼再執行）
-# 連續要求更新最多 3 次，避免主腳本出錯時無限重來
+# 連續快速要求更新最多 3 次，避免主腳本出錯時無限重來；
+# 上一輪執行超過 60 秒（正常使用後才按更新）就重新計數
 $upgrade = $false
 $rounds = 0
 while ($true) {
@@ -121,9 +122,10 @@ while ($true) {
     $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $source.Dir 'vid-snatch.ps1'),
         '-Commit', $source.Commit)
     if ($upgrade) { $psArgs += '-Upgrade' }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     & powershell.exe @psArgs
     $code = $LASTEXITCODE
     if ($code -ne 10) { exit $code }
     $upgrade = $true
-    $rounds++
+    if ($sw.Elapsed.TotalSeconds -gt 60) { $rounds = 1 } else { $rounds++ }
 }
