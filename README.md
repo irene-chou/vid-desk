@@ -6,37 +6,42 @@
 
 ## 安裝
 
-1. 安裝 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。這是唯一需要先裝的東西。第一次開啟時，它可能會要你同意條款，按 Accept 即可。
-2. 到[本專案的 GitHub 頁面](https://github.com/irene-chou/vid-snatch)，按 `Code` → `Download ZIP`，下載後解壓縮。
-3. 雙擊資料夾裡的啟動檔。
-   - macOS：`vid-snatch.command`
-   - Windows：`vid-snatch.bat`
+1. [下載 vid-snatch.zip](https://github.com/irene-chou/vid-snatch/releases/latest/download/vid-snatch.zip)，解壓縮。解壓後會看到兩個啟動檔和一個 `files` 資料夾，`files` 不用打開。
+2. 依你的系統繼續：
+   - **macOS**：先安裝 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，第一次開啟時若要你同意條款，按 Accept。再雙擊 `vid-snatch-Mac.command`。
+   - **Windows**：不用先裝任何東西，直接雙擊 `vid-snatch-Windows.bat`。
 
 第一次執行時，系統可能會擋一下：
 
-- **macOS**：在 Finder 裡對 `vid-snatch.command` 按右鍵，選「打開」，再按一次「打開」。之後直接雙擊就行。
-  - 如果沒有「打開」可以按（macOS 15 以後），請到「系統設定」→「隱私權與安全性」，往下找到 vid-snatch.command 的提示，按「仍要打開」。
+- **macOS**：在 Finder 裡對 `vid-snatch-Mac.command` 按右鍵，選「打開」，再按一次「打開」。之後直接雙擊就行。
+  - 如果沒有「打開」可以按（macOS 15 以後），請到「系統設定」→「隱私權與安全性」，往下找到 vid-snatch-Mac.command 的提示，按「仍要打開」。
 - **Windows**：出現 SmartScreen 藍色視窗時，按「其他資訊」，再按「仍要執行」。
 
-第一次啟動要下載或建置環境，約 3-5 分鐘，請耐心等候。
+第一次啟動要準備環境：
+
+- **macOS**：約 3-5 分鐘。
+- **Windows**：會自動下載約 1–2 GB，約 10–15 分鐘，視窗會顯示目前進度。請耐心等候。
 
 ## 使用
 
 1. 雙擊啟動檔。會跳出一個終端機視窗，瀏覽器也會自動打開 vid-snatch。
 2. 貼上 YouTube 網址，可以按「貼上」，一行放一個網址。
 3. 選格式：「音檔 MP3」、「去人聲 MP3」或「影片 MP4」。
-4. 需要的話改檔名，按「開始」。
+4. 確認或修改每個網址的檔名，按「開始」。
 5. 完成後，按「顯示檔案」就能找到下載好的檔案。
 
 終端機視窗要一直開著。關掉它，vid-snatch 就會結束。Windows 上，背景服務會在關閉視窗後約 15 秒自動停止。也可以在網頁的「⚙ 設定」裡按「結束 vid-snatch」。
 
 ## 常見問題
 
-**Docker 跳出同意條款？**
+**Docker 跳出同意條款？（僅 macOS）**
 按 Accept。按完後啟動會自動繼續。
 
+**Windows 防毒軟體擋下載？**
+第一次啟動會下載 uv、ffmpeg、deno 三個工具。被防毒軟體擋下時，請允許它們，再重新雙擊 `vid-snatch-Windows.bat`。
+
 **第一次為什麼很慢？**
-第一次要下載或建置環境，約 3-5 分鐘，之後就快了。
+第一次要下載或建置環境。macOS 約 3-5 分鐘，Windows 約 10–15 分鐘，之後就快了。
 
 **去人聲要多久？**
 一首歌約 3–8 分鐘。
@@ -51,7 +56,7 @@
 每次啟動都會自動檢查更新。想立刻更新，按「⚙ 設定」→「進階」→「更新 vid-snatch」。
 
 **怎麼移除？**
-按「⚙ 設定」→「進階」→「解除安裝」，再選要不要一併刪除下載檔案。選刪除時，也只有預設資料夾會被刪。改過儲存位置的話，請自己刪除。
+按「⚙ 設定」→「進階」→「解除安裝」，再選要不要一併刪除下載檔案。選刪除時，也只有預設資料夾會被刪。改過儲存位置的話，請自己刪除。Windows 會一併刪除 `%LOCALAPPDATA%\vid-snatch`。
 
 **不小心關掉瀏覽器分頁？**
 回到終端機視窗按 Enter，瀏覽器會重新打開。
