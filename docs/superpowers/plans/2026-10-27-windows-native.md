@@ -28,17 +28,17 @@
   logs\server.log          伺服器 stdout/stderr
   server.json              {"pid":<int>,"port":<int>}
   ```
-- 預設下載資料夾：`Join-Path $env:USERPROFILE 'Music\vid-snatch'`（同現行）。
+- 預設下載資料夾：`[Environment]::GetFolderPath('MyMusic')` + `\vid-snatch`（「音樂」資料夾被 OneDrive 或使用者搬移時仍正確；取不到時用 `$env:USERPROFILE\Music`）。
 - Python 3.12；PyTorch 用 PyPI 預設 wheel（Windows 上即 CPU 版），不另指定 index。
 - 伺服器只綁 `127.0.0.1`；連接埠從 8080 起找空的，上限 8180（同現行）。
-- GitHub repo：`irene-chou/vid-snatch`，分支 `main`。最新 commit 查 `https://api.github.com/repos/irene-chou/vid-snatch/commits/main`（`Accept: application/vnd.github.sha` 回傳純文字 SHA），封存檔 `https://github.com/irene-chou/vid-snatch/archive/<sha>.zip`。
+- GitHub repo：`irene-chou/vid-snatch`。啟動器追蹤 `latest` 標籤（`release.yml` 每次 `main` 更新時移動，Ruling F）：最新 commit 查 `https://api.github.com/repos/irene-chou/vid-snatch/commits/latest`（`Accept: application/vnd.github.sha` 回傳純文字 SHA），封存檔 `https://github.com/irene-chou/vid-snatch/archive/<sha>.zip`。
 - 工具下載網址（皆為 GitHub releases 的 latest 固定網址）：
   - uv：`https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip`
   - deno：`https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip`
   - ffmpeg：`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip`（取 `bin\ffmpeg.exe`、`bin\ffprobe.exe`）
   - Demucs htdemucs_ft 模型（4 個檔案）：`https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/` 底下的 `f7e0c4bc-ba3fe64a.th`、`d12395a8-e57c48e6.th`、`92cfc3b6-ef3bcb9c.th`、`04573f0d-f3cf25b2.th`
 - 所有下載先寫到 `<目標>.part`，完成後才改名，確保中斷後不會留下看似完整的檔案。
-- 使用者看到的文字一律繁體中文；失敗時保留視窗（主腳本 `exit 1`，由 `.bat` 的 `if errorlevel 1 pause` 停住）。
+- 使用者看到的文字一律繁體中文；失敗時保留視窗（主腳本 `exit 1`，由 `.bat` 在結束碼非 0 時 `pause` 停住）。
 - 測試與開發用環境變數（使用者不會設）：`VS_NO_BROWSER=1`（只印網址，既有）、`VS_SOURCE=local`（不查 GitHub，直接用解壓資料夾的原始碼）、`VS_UPDATE_API`（覆寫查最新 commit 的網址，CI 用來模擬離線）。
 - Windows on ARM（`PROCESSOR_ARCHITEW6432` 或 `PROCESSOR_ARCHITECTURE` 為 `ARM64`）：顯示「目前不支援 ARM 版 Windows」後 `exit 1`。
 - macOS 的 `Dockerfile`、`publish.yml` 不改；`vid-snatch-Mac.command` 只在 Task 6 為下載包配置小改。

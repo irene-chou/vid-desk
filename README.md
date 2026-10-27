@@ -47,7 +47,7 @@
 一首歌約 3–8 分鐘。
 
 **檔案存在哪裡？**
-預設在 `~/Music/vid-snatch`。Windows 是 `音樂\vid-snatch`。
+預設在 `~/Music/vid-snatch`。Windows 是「音樂」資料夾裡的 `vid-snatch`（音樂資料夾搬到 OneDrive 或其他位置也會跟著）。
 
 **怎麼改儲存位置？**
 按「⚙ 設定」→「更換資料夾」。下次啟動才會生效。

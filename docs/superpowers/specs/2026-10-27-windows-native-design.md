@@ -15,7 +15,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 - Windows 使用者只需：下載 ZIP、解壓縮、雙擊 `vid-snatch.bat`。不需要管理員權限、不需要虛擬化、不需要事先安裝任何東西（Python、Docker、ffmpeg 都不用）。
 - 網頁介面、使用流程、按鈕、錯誤訊息與 macOS 版完全相同。
 - 現有功能全部保留：MP3、去人聲 MP3、MP4、顯示檔案、更換資料夾、結束、更新、解除安裝、yt-dlp 自動更新。
-- 每次啟動自動檢查更新，取得的程式版本與 macOS 從 GHCR 拉到的映像檔一致（都是 GitHub `main` 最新版）。
+- 每次啟動自動檢查更新，取得的程式版本與 macOS 從 GHCR 拉到的映像檔一致（都是 GitHub `main` 最新版；Windows 經由 release.yml 每次 main 更新時移動的 `latest` 標籤取得）。
 - 離線或 GitHub 連不上時，已安裝過的使用者仍可啟動。
 
 **非目標**
@@ -64,8 +64,8 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 - 更新範圍包含 **PowerShell 腳本本身**，不只 Python 套件，否則腳本出 bug 永遠修不到已解壓的使用者（我的決定）。
 - 結構分兩層：
   - 使用者解壓縮資料夾裡的 `vid-snatch.bat` 只是穩定的小啟動器，幾乎不再修改。
-  - 它每次啟動嘗試下載 GitHub `main` 的封存檔，解到 `%LOCALAPPDATA%\vid-snatch\app\`，然後執行**那一份**的 `vid-snatch.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
-- 判斷「已是最新」：比對 `main` 最新 commit 與上次安裝的 commit，相同就跳過下載與重裝。
+  - 它每次啟動查詢 GitHub `latest` 標籤（`release.yml` 在每次 `main` 更新時移動它）指向的 commit，下載該 commit 的封存檔，解到 `%LOCALAPPDATA%\vid-snatch\app\`，然後執行**那一份**的 `vid-snatch.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
+- 判斷「已是最新」：比對 `latest` 標籤的 commit 與上次安裝的 commit，相同就跳過下載與重裝。追蹤標籤而非 `main`，日後可改成只在 CI 通過後才移動標籤，而不必更新已發佈的啟動器（Ruling F）。標籤尚未建立時查詢失敗，走下面的備援。
 - 取得失敗時：若 `app\` 已有安裝就直接用；若從未安裝，改用解壓縮資料夾裡的 `vid-snatch.ps1` 與原始碼；兩者都不行才顯示錯誤。
 - 依賴版本不鎖定，與目前 Dockerfile 一樣在安裝時解析最新相容版本（我的決定，不改動 macOS 建置）。
   - 平常啟動、程式碼有新 commit 時：重裝 vid-snatch 套件，但已安裝且仍滿足需求的依賴不升級，所以不會每次重下 PyTorch。
