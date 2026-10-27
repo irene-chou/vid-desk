@@ -12,17 +12,17 @@ from .models import DEMUCS_MODEL, DEMUCS_MODELS
 _KEY = "output_dir="
 
 AUDIO_FORMATS = ("mp3", "m4a", "wav", "flac")
-BITRATES = (128, 192, 320)
 MAX_HEIGHTS = (1080, 720)
 
 # 細項設定的 key 與預設值；video_max_height=None 表示不限（最佳畫質）
 DEFAULT_SETTINGS: dict[str, object] = {
     "audio_format": "mp3",
-    "audio_bitrate": 192,
     "demucs_model": DEMUCS_MODEL,
     "video_max_height": None,
 }
 _ORDER = ("output_dir", *DEFAULT_SETTINGS)
+# 已移除的設定（#18 位元率固定 192k）：讀檔時略過，寫回時丟掉
+_LEGACY_KEYS = ("audio_bitrate",)
 
 
 def _config_path(config_dir: Path) -> Path:
@@ -47,6 +47,7 @@ def write_raw(config_dir: Path, values: dict[str, str]) -> None:
     config_dir = Path(config_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
     merged = {**read_raw(config_dir), **values}
+    merged = {k: v for k, v in merged.items() if k not in _LEGACY_KEYS}
     keys = [k for k in _ORDER if k in merged] + [k for k in merged if k not in _ORDER]
     lines = "".join(f"{k}={merged[k]}\n" for k in keys)
     _config_path(config_dir).write_text(lines, encoding="utf-8")
@@ -66,8 +67,6 @@ def _parse(key: str, raw: str) -> object:
     raw = raw.strip()
     if key == "audio_format":
         return raw if raw in AUDIO_FORMATS else default
-    if key == "audio_bitrate":
-        return int(raw) if raw.isdigit() and int(raw) in BITRATES else default
     if key == "demucs_model":
         return raw if raw in DEMUCS_MODELS else default
     if key == "video_max_height":

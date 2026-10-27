@@ -281,12 +281,6 @@
                 <label><input type="radio" name="fmt" value="wav">WAV</label>
                 <label><input type="radio" name="fmt" value="flac">FLAC</label>
               </div></div>
-            <div class="sub" id="row-bitrate"><span class="k" id="lbl-br">位元率</span>
-              <div class="seg" role="radiogroup" aria-labelledby="lbl-br">
-                <label><input type="radio" name="br" value="128">128k</label>
-                <label><input type="radio" name="br" value="192">192k</label>
-                <label><input type="radio" name="br" value="320">320k</label>
-              </div></div>
             <div class="sub" id="row-model"><span class="k" id="lbl-mdl">分離模型</span>
               <div class="seg" role="radiogroup" aria-labelledby="lbl-mdl">
                 <label title="htdemucs，約 1–2 分鐘"><input type="radio" name="mdl" value="htdemucs"><svg class="ic"><use href="#i-zap"/></svg>快速</label>
@@ -344,16 +338,14 @@
 const VERSION_ORDER = ["original", "instrumental", "vocals"];
 const VERSION_LABELS = { original: "原曲", instrumental: "伴奏", vocals: "人聲" };
 const FORMATS = ["mp3", "m4a", "wav", "flac"];
-const BITRATES = [128, 192, 320];
 const MODELS = ["htdemucs", "htdemucs_ft"];
 const MAX_HEIGHTS = [1080, 720];
-const LOSSLESS = ["wav", "flac"];
 
 // 每次載入都回到預設：只勾音檔、只勾原曲；細項由 GET /api/settings 覆寫
 function defaultOutputState() {
   return {
     audio: true, versions: { original: true, instrumental: false, vocals: false },
-    format: "mp3", bitrate: 192, model: "htdemucs_ft",
+    format: "mp3", model: "htdemucs_ft",
     video: false, maxHeight: null,
   };
 }
@@ -370,7 +362,7 @@ function needsSeparation(state) {
 function outputsPayload(state) {
   return {
     audio: state.audio
-      ? { versions: orderedVersions(state.versions), format: state.format, bitrate: state.bitrate, model: state.model }
+      ? { versions: orderedVersions(state.versions), format: state.format, model: state.model }
       : null,
     video: state.video ? { max_height: state.maxHeight } : null,
   };
@@ -382,10 +374,8 @@ function outputCount(state) {
 }
 
 function audioSummary(state) {
-  const fmt = state.format.toUpperCase();
-  const head = LOSSLESS.includes(state.format) ? fmt : `${fmt} ${state.bitrate}k`;
   const names = orderedVersions(state.versions).map((v) => VERSION_LABELS[v]);
-  return `${head} · ${names.length ? names.join(" + ") : "未選版本"}`;
+  return `${state.format.toUpperCase()} · ${names.length ? names.join(" + ") : "未選版本"}`;
 }
 
 function videoSummary(state) {
@@ -415,7 +405,6 @@ function existsQuery(state, filename) {
 function applySettings(state, settings) {
   const next = { ...state, versions: { ...state.versions } };
   if (FORMATS.includes(settings.audio_format)) next.format = settings.audio_format;
-  if (BITRATES.includes(settings.audio_bitrate)) next.bitrate = settings.audio_bitrate;
   if (MODELS.includes(settings.demucs_model)) next.model = settings.demucs_model;
   if (settings.video_max_height === null || MAX_HEIGHTS.includes(settings.video_max_height)) {
     next.maxHeight = settings.video_max_height;
@@ -451,16 +440,13 @@ function fmtSize(bytes) {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
 }
 
-// 膠囊文字：原曲.mp3 · 192k、伴奏.flac、.mp4 · 1080p；細項摘要由 job.options 組出
+// 膠囊文字：原曲.mp3、伴奏.flac、.mp4 · 1080p；影片的畫質上限由 job.options 組出
 function outputLabel(output, options) {
   if (output.kind === "video") {
     const h = options && options.video ? options.video.max_height : null;
     return `.${output.ext}${h ? ` · ${h}p` : ""}`;
   }
-  const audio = options && options.audio;
-  const lossy = !LOSSLESS.includes(output.ext);
-  const br = audio && lossy && audio.bitrate ? ` · ${audio.bitrate}k` : "";
-  return `${VERSION_LABELS[output.kind] || output.kind}.${output.ext}${br}`;
+  return `${VERSION_LABELS[output.kind] || output.kind}.${output.ext}`;
 }
 
 // 標題列右側的狀態文字
@@ -637,8 +623,6 @@ function readOutputState() {
   for (const cb of document.querySelectorAll("[data-version]")) state.versions[cb.dataset.version] = cb.checked;
   const fmt = document.querySelector('input[name="fmt"]:checked');
   if (fmt) state.format = fmt.value;
-  const br = document.querySelector('input[name="br"]:checked');
-  if (br) state.bitrate = Number(br.value);
   const mdl = document.querySelector('input[name="mdl"]:checked');
   if (mdl) state.model = mdl.value;
   const res = document.querySelector('input[name="res"]:checked');
@@ -662,7 +646,6 @@ function renderOutputs() {
     cb.closest(".chip").classList.toggle("on", cb.checked);
   }
   checkRadio("fmt", s.format);
-  checkRadio("br", String(s.bitrate));
   checkRadio("mdl", s.model);
   checkRadio("res", s.maxHeight ? String(s.maxHeight) : "");
   for (const label of document.querySelectorAll(".seg label")) {
@@ -670,15 +653,13 @@ function renderOutputs() {
   }
   $("audio-summary").textContent = audioSummary(s);
   $("video-summary").textContent = videoSummary(s);
-  $("row-bitrate").classList.toggle("dim", LOSSLESS.includes(s.format));
-  $("row-bitrate").title = LOSSLESS.includes(s.format) ? "WAV / FLAC 不受位元率影響" : "";
   $("row-model").classList.toggle("dim", !needsSeparation(s));
   $("row-model").title = needsSeparation(s) ? "" : "勾了伴奏或人聲才會用到";
   $("sep-hint").textContent = s.model === "htdemucs" ? "1–2 分" : "3–8 分";
   refreshForm();
 }
 
-const SETTING_KEYS = { fmt: "audio_format", br: "audio_bitrate", mdl: "demucs_model", res: "video_max_height" };
+const SETTING_KEYS = { fmt: "audio_format", mdl: "demucs_model", res: "video_max_height" };
 
 async function onOutputsChange(event) {
   const before = outputState;
@@ -687,10 +668,10 @@ async function onOutputsChange(event) {
   // 細項改了就存回設定；「版本」與兩個大選項不存
   const key = SETTING_KEYS[event.target.name];
   if (!key) return;
-  const value = { audio_format: outputState.format, audio_bitrate: outputState.bitrate,
-                  demucs_model: outputState.model, video_max_height: outputState.maxHeight }[key];
-  const previous = { audio_format: before.format, audio_bitrate: before.bitrate,
-                     demucs_model: before.model, video_max_height: before.maxHeight }[key];
+  const value = { audio_format: outputState.format, demucs_model: outputState.model,
+                  video_max_height: outputState.maxHeight }[key];
+  const previous = { audio_format: before.format, demucs_model: before.model,
+                     video_max_height: before.maxHeight }[key];
   if (value === previous) return;
   try {
     await postJson("/api/settings", { [key]: value });

@@ -54,8 +54,13 @@ def test_jobs_payload_uses_outputs_not_mode():
 
 def test_details_saved_to_settings_but_versions_are_not():
     assert 'postJson("/api/settings", { [key]: value })' in HTML
-    assert re.search(r'SETTING_KEYS = \{ fmt: "audio_format", br: "audio_bitrate", mdl: "demucs_model", res: "video_max_height" \}', HTML)
+    assert re.search(r'SETTING_KEYS = \{ fmt: "audio_format", mdl: "demucs_model", res: "video_max_height" \}', HTML)
     assert "outputState = applySettings(outputState, data)" in HTML
+
+def test_no_bitrate_option():
+    # #18：位元率固定 192k，細項裡沒有位元率列，也不再讀寫 audio_bitrate
+    for needle in ("row-bitrate", 'name="br"', "audio_bitrate", "bitrate", "位元率"):
+        assert needle not in HTML, needle
 
 def test_icon_only_buttons_have_aria_label_and_title():
     buttons = re.findall(r"<button\b[^>]*class=\"ibtn[^\"]*\"[^>]*>", HTML)

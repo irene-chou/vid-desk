@@ -21,25 +21,37 @@ def test_reads_existing_bash_format(tmp_path):
 
 
 def test_settings_defaults_when_missing(tmp_path):
-    assert read_settings(tmp_path) == {"audio_format": "mp3", "audio_bitrate": 192, "demucs_model": "htdemucs_ft", "video_max_height": None}
+    assert read_settings(tmp_path) == {"audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": None}
     assert read_settings(tmp_path) == config.DEFAULT_SETTINGS
 
 
 def test_settings_roundtrip_keeps_output_dir_first(tmp_path):
-    write_settings(tmp_path, {"audio_bitrate": 320, "video_max_height": 720})
+    write_settings(tmp_path, {"demucs_model": "htdemucs", "video_max_height": 720})
     write_output_dir(tmp_path, "/new")
     write_settings(tmp_path, {"audio_format": "flac", "video_max_height": None, "ignored": "x"})
     text = (tmp_path / "config").read_text(encoding="utf-8")
     assert text.splitlines()[0] == "output_dir=/new"
-    assert text == "output_dir=/new\naudio_format=flac\naudio_bitrate=320\nvideo_max_height=\n"
+    assert text == "output_dir=/new\naudio_format=flac\ndemucs_model=htdemucs\nvideo_max_height=\n"
     assert read_output_dir(tmp_path) == "/new"
-    assert read_settings(tmp_path) == {"audio_format": "flac", "audio_bitrate": 320, "demucs_model": "htdemucs_ft", "video_max_height": None}
+    assert read_settings(tmp_path) == {"audio_format": "flac", "demucs_model": "htdemucs", "video_max_height": None}
 
 
 def test_invalid_values_fall_back_to_defaults(tmp_path):
     (tmp_path / "config").write_text(
-        "output_dir=/x\naudio_format=ogg\naudio_bitrate=abc\ndemucs_model=mdx\nvideo_max_height=480\n", encoding="utf-8")
+        "output_dir=/x\naudio_format=ogg\ndemucs_model=mdx\nvideo_max_height=480\n", encoding="utf-8")
     assert read_settings(tmp_path) == config.DEFAULT_SETTINGS
+    assert read_output_dir(tmp_path) == "/x"
+
+
+def test_legacy_audio_bitrate_line_is_ignored_and_dropped(tmp_path):
+    # #18 之前的設定檔會有 audio_bitrate=；讀取時安靜略過，不出現在細項裡
+    (tmp_path / "config").write_text("output_dir=/x\naudio_bitrate=320\naudio_format=flac\n", encoding="utf-8")
+    assert read_settings(tmp_path) == {"audio_format": "flac", "demucs_model": "htdemucs_ft", "video_max_height": None}
+    write_settings(tmp_path, {"audio_bitrate": 320})  # 已不是設定 key，不寫任何東西
+    assert "audio_bitrate=320" in (tmp_path / "config").read_text(encoding="utf-8")
+    # 寫回其他細項時把殘留的那一行丟掉
+    write_settings(tmp_path, {"video_max_height": 720})
+    assert (tmp_path / "config").read_text(encoding="utf-8") == "output_dir=/x\naudio_format=flac\nvideo_max_height=720\n"
     assert read_output_dir(tmp_path) == "/x"
 
 
@@ -50,7 +62,7 @@ def test_value_may_contain_equals_sign(tmp_path):
 
 # ---- 與啟動腳本的相容性：bash / bat / ps1 只讀 `output_dir=` 那一行 ----
 
-MULTI = {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac", "audio_bitrate": 320,
+MULTI = {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
          "demucs_model": "htdemucs", "video_max_height": None}
 
 

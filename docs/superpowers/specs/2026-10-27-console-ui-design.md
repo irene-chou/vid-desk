@@ -18,11 +18,10 @@
 
 ```
 輸出
-├─ ☑ 音檔                      摘要：MP3 192k · 原曲 + 伴奏
+├─ ☑ 音檔                      摘要：MP3 · 原曲 + 伴奏
 │   ├─ 版本（可多選，常駐顯示）  ☑ 原曲   ☑ 伴奏（去人聲）   ☐ 人聲
 │   └─ 細項（收合）
-│       ├─ 格式      MP3 · M4A · WAV · FLAC
-│       ├─ 位元率    128k · 192k · 320k
+│       ├─ 格式      MP3 · M4A · WAV · FLAC（有損格式固定 192k，#18 拿掉位元率選項）
 │       └─ 分離模型  快速 htdemucs · 高品質 htdemucs_ft
 └─ ☐ 影片                      摘要：MP4 · 最佳畫質
     └─ 畫質上限  最佳 · 1080p · 720p
@@ -57,7 +56,7 @@
 
 實作細節（#11 定案）：
 
-- 膠囊文字：音檔 `原曲.mp3 · 192k`（WAV / FLAC 不顯示位元率；`ext` 以 `output.ext` 為準，與 `format` 相同），影片 `.mp4 · 1080p`（最佳畫質只有 `.mp4`）。膠囊狀態圖示只在工作執行中、完成或失敗時顯示；排隊中與已取消的卡片不顯示（全是時鐘沒有資訊）。
+- 膠囊文字：音檔 `原曲.mp3`（`ext` 以 `output.ext` 為準，與 `format` 相同；#18 之後不顯示位元率），影片 `.mp4 · 1080p`（最佳畫質只有 `.mp4`）。膠囊狀態圖示只在工作執行中、完成或失敗時顯示；排隊中與已取消的卡片不顯示（全是時鐘沒有資訊）。
 - 細節列的「已存檔名與大小」每個完成的輸出一列（失敗工作裡已完成的輸出也列）。
 - 耗時：收到 job 時記下 `elapsed_seconds` / `eta_seconds` 與本機時刻，之後前端每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 `started_at`（避免時鐘差）。預估總時 = 收到時的已耗時 + `eta_seconds`，下一則 SSE 前不會往下掉；已耗時超過預估就顯示相同數字。頁面上沒有進行中的卡片時計時器停掉。
 - 分組：`#jobs`（進行中與排隊）與 `#jobs-done`（已完成）兩個 `ul`；工作變成 `done` / `failed` / `cancelled` 時卡片搬到已完成區最上面。「清除已完成」只在前端隱藏（記住 id，SSE 重連重播時不畫回來），後端不刪。
@@ -83,8 +82,8 @@
 
 - 工作模型從單一 `mode` 改為「一個網址、多個輸出」，每個輸出有自己的狀態與結果路徑。
 - 工作事件多回傳：原標題、各輸出狀態、開始時間 / 耗時、預估剩餘、結果檔大小。
-- 細項（格式、位元率、模型、畫質）存進設定檔並能讀回。
-- 音檔 M4A/WAV/FLAC、位元率、影片畫質上限、demucs 模型切換、人聲輸出。
+- 細項（格式、模型、畫質）存進設定檔並能讀回。
+- 音檔 M4A/WAV/FLAC、影片畫質上限、demucs 模型切換、人聲輸出。
 
 定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` / `DELETE` 都要帶 `X-Vid-Snatch: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
 
@@ -95,8 +94,7 @@
 | 名稱 | 值 | 說明 |
 |---|---|---|
 | version / kind | `original` `instrumental` `vocals` `video` | 前三個是音檔版本（原曲 / 伴奏 / 人聲），`video` 只出現在輸出列 |
-| format | `mp3` `m4a` `wav` `flac` | 音檔格式，預設 `mp3` |
-| bitrate | `128` `192` `320` | 整數 kbps，預設 `192`；對 `wav` / `flac` 無作用 |
+| format | `mp3` `m4a` `wav` `flac` | 音檔格式，預設 `mp3`；有損格式固定 192 kbps（#18 拿掉 `bitrate` 參數，收到會忽略） |
 | model | `htdemucs` `htdemucs_ft` | 分離模型（快速 / 高品質），預設 `htdemucs_ft`，兩個都已預載 |
 | max_height | `null` `1080` `720` | 影片畫質上限，`null` = 最佳 |
 | job.state | `queued` `running` `done` `failed` `cancelled` | 工作狀態；`cancelled` 只會由 `DELETE /api/jobs/{id}` 產生 |
@@ -108,7 +106,7 @@
 {
   "urls": ["https://youtu.be/…", "…"],
   "outputs": {
-    "audio": { "versions": ["original", "instrumental"], "format": "mp3", "bitrate": 192, "model": "htdemucs_ft" },
+    "audio": { "versions": ["original", "instrumental"], "format": "mp3", "model": "htdemucs_ft" },
     "video": { "max_height": 1080 }
   },
   "filenames": ["自訂檔名", null],
@@ -116,10 +114,10 @@
 }
 ```
 
-- `outputs` 整批共用。`audio` / `video` 任一可為 `null` 或省略，但不能兩個都沒有（400「至少要選一種輸出」）。`audio.versions` 至少一個（400「音檔至少要勾一個版本」）；重複會去掉，順序一律整理成 原曲 → 伴奏 → 人聲。`format` / `bitrate` / `model` / `max_height` 省略時用上表預設（不是設定檔的值；前端要自己把 `GET /api/settings` 讀到的細項填進來）。
+- `outputs` 整批共用。`audio` / `video` 任一可為 `null` 或省略，但不能兩個都沒有（400「至少要選一種輸出」）。`audio.versions` 至少一個（400「音檔至少要勾一個版本」）；重複會去掉，順序一律整理成 原曲 → 伴奏 → 人聲。`format` / `model` / `max_height` 省略時用上表預設（不是設定檔的值；前端要自己把 `GET /api/settings` 讀到的細項填進來）。`audio.bitrate` 已移除：舊分頁送來時忽略，不回 422。
 - `filenames` / `overwrites` 與 `urls` 等長（可省略；單一網址也可用舊的 `filename` / `overwrite`）。空字串檔名視為「用原標題」。
 - 回應 `{"jobs": [job, …]}`，job 結構見下。
-- 檔名規則：原曲 `<name>.<format>`、伴奏 `<name>_no_vocals.<ext>`、人聲 `<name>_vocals.<ext>`、影片 `<name>.mp4`。分離結果的 `ext` 與 `format` 相同；demucs 只能直接寫 mp3 / wav / flac，`m4a` 時後端先寫暫存 wav 再用 ffmpeg 轉成 `.m4a`（位元率照設定），暫存檔處理完即刪除。
+- 檔名規則：原曲 `<name>.<format>`、伴奏 `<name>_no_vocals.<ext>`、人聲 `<name>_vocals.<ext>`、影片 `<name>.mp4`。分離結果的 `ext` 與 `format` 相同；demucs 只能直接寫 mp3 / wav / flac，`m4a` 時後端先寫暫存 wav 再用 ffmpeg 轉成 `.m4a`（192k），暫存檔處理完即刪除。
 - 執行順序：取得資訊 → 下載音訊一次（需分離時下載 wav，否則直接下載目標格式）→ 轉檔（原曲）→ 分離（一次 demucs 同時產出伴奏與人聲）→ 下載影片 → 合併。過程中的 `<name>.wav` 會刪掉，除非原曲格式就是 wav。
 
 ### `GET /api/exists`
@@ -142,7 +140,7 @@ Query：`filename`（必填）、`versions`（逗號分隔，例如 `original,in
 | `url` | string | 清理後的來源網址 |
 | `filename` | string \| null | 使用者自訂的檔名主體；null 表示用原標題 |
 | `overwrite` | bool | 允許覆蓋既有檔 |
-| `options` | object | 送進來的 `outputs`，補齊預設後的樣子：`{"audio": {"versions","format","bitrate","model"} \| null, "video": {"max_height"} \| null}`，膠囊摘要（`MP3 192k`、`1080p`）由此組出 |
+| `options` | object | 送進來的 `outputs`，補齊預設後的樣子：`{"audio": {"versions","format","model"} \| null, "video": {"max_height"} \| null}`，膠囊摘要（`MP3`、`1080p`）由此組出 |
 | `outputs` | Output[] | 每個輸出檔一筆，順序固定 原曲 → 伴奏 → 人聲 → 影片 |
 | `steps` | string[] | 這個工作的步驟名稱，依 `options` 動態組成，例如 `["取得資訊","下載","轉檔","分離","下載影片","合併"]`（只有影片時是 `["取得資訊","下載","合併"]`） |
 | `state` | `queued` `running` `done` `failed` `cancelled` | 工作狀態 |
@@ -189,10 +187,10 @@ SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位�
 ### `GET /api/settings` / `POST /api/settings`
 
 ```json
-{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "audio_bitrate": 192, "demucs_model": "htdemucs_ft", "video_max_height": null }
+{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null }
 ```
 
-- `GET` 回傳上述五個欄位；`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `192` / `htdemucs_ft` / `null`）補齊。
-- `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的五個欄位 + `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
+- `GET` 回傳上述四個欄位；`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
+- `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的四個欄位 + `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
 - 「版本」（原曲 / 伴奏 / 人聲）不存設定，每次載入回到預設「原曲」。
 - 設定檔 `config` 每行 `key=value`，`output_dir` 永遠在第一行；bash / bat / ps1 啟動腳本只讀那一行，其餘行會被略過。

@@ -5,7 +5,7 @@ from vid_snatch.outputs import KINDS, VERSIONS, OutputOptions
 
 def test_from_mode_matches_cli_modes():
     assert OutputOptions.from_mode("mp3").to_dict() == {
-        "audio": {"versions": ["original"], "format": "mp3", "bitrate": 192, "model": "htdemucs_ft"}, "video": None}
+        "audio": {"versions": ["original"], "format": "mp3", "model": "htdemucs_ft"}, "video": None}
     assert OutputOptions.from_mode("mp4").to_dict() == {"audio": None, "video": {"max_height": None}}
     assert OutputOptions.from_mode("no_vocals").audio.versions == ["instrumental"]
     assert OutputOptions.from_mode("no_vocals", model="htdemucs").audio.model == "htdemucs"
@@ -21,12 +21,18 @@ def test_versions_are_deduplicated_and_ordered():
 
 @pytest.mark.parametrize("bad", [
     {}, {"audio": None, "video": None}, {"audio": {"versions": []}}, {"audio": {"versions": ["karaoke"]}},
-    {"audio": {"versions": ["original"], "format": "ogg"}}, {"audio": {"versions": ["original"], "bitrate": 256}},
+    {"audio": {"versions": ["original"], "format": "ogg"}},
     {"audio": {"versions": ["original"], "model": "mdx"}}, {"video": {"max_height": 480}},
 ])
 def test_from_dict_rejects(bad):
     with pytest.raises(ValueError):
         OutputOptions.from_dict(bad)
+
+
+def test_from_dict_ignores_legacy_bitrate():
+    # #18：位元率固定 192k，舊前端送的 bitrate 不驗證也不留在 options 裡
+    o = OutputOptions.from_dict({"audio": {"versions": ["original"], "bitrate": 256}})
+    assert o.to_dict()["audio"] == {"versions": ["original"], "format": "mp3", "model": "htdemucs_ft"}
 
 
 def test_target_names_and_steps():

@@ -7,7 +7,7 @@ from tests.test_jobs import FakeBackend, run_until_idle
 
 H = {"X-Vid-Snatch": "1"}
 MP3 = {"audio": {"versions": ["original"]}}
-ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "bitrate": 320, "model": "htdemucs"},
+ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "model": "htdemucs"},
        "video": {"max_height": 1080}}
 
 @pytest.fixture
@@ -93,19 +93,30 @@ def test_settings_write(env):
 def test_settings_defaults(env):
     c, *_ = env
     assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
-                                             "audio_bitrate": 192, "demucs_model": "htdemucs_ft", "video_max_height": None}
+                                             "demucs_model": "htdemucs_ft", "video_max_height": None}
 
 def test_settings_details_partial_update_without_restart(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
-    assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac", "audio_bitrate": 192,
+    assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
                  "demucs_model": "htdemucs_ft", "video_max_height": 720, "restart_required": False}
     r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
     assert r["audio_format"] == "flac" and r["demucs_model"] == "htdemucs" and r["video_max_height"] is None
     assert c.get("/api/settings").json()["video_max_height"] is None
     assert "output_dir=" not in (cfg / "config").read_text(encoding="utf-8")
-    assert c.post("/api/settings", json={"audio_bitrate": 256}, headers=H).status_code == 422
+    assert c.post("/api/settings", json={"demucs_model": "mdx"}, headers=H).status_code == 422
     assert c.post("/api/settings", json={"output_dir": "  "}, headers=H).status_code == 400
+
+def test_settings_ignore_legacy_audio_bitrate(env):
+    # #18：舊的快取前端可能還會送 audio_bitrate；忽略而不是 422，回應與設定檔裡都不再有它
+    c, q, h, cfg, _ = env
+    cfg.mkdir(exist_ok=True)
+    (cfg / "config").write_text("output_dir=/x\naudio_bitrate=320\n", encoding="utf-8")
+    assert "audio_bitrate" not in c.get("/api/settings").json()
+    r = c.post("/api/settings", json={"audio_bitrate": 128, "audio_format": "m4a"}, headers=H)
+    assert r.status_code == 200 and "audio_bitrate" not in r.json() and r.json()["audio_format"] == "m4a"
+    assert (cfg / "config").read_text(encoding="utf-8") == "output_dir=/x\naudio_format=m4a\n"
+    (cfg / "config").unlink()
 
 def test_create_jobs_with_full_outputs(env):
     c, q, *_ = env
@@ -126,12 +137,20 @@ def test_create_jobs_with_full_outputs(env):
 
 @pytest.mark.parametrize("outputs,status", [
     ({}, 400), ({"audio": {"versions": []}}, 400), ({"audio": {"versions": ["karaoke"]}}, 422),
-    ({"audio": {"versions": ["original"], "bitrate": 256}}, 422), ({"video": {"max_height": 480}}, 422),
+    ({"audio": {"versions": ["original"], "model": "mdx"}}, 422), ({"video": {"max_height": 480}}, 422),
 ])
 def test_create_jobs_rejects_bad_outputs(env, outputs, status):
     c, q, *_ = env
     r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": outputs}, headers=H)
     assert r.status_code == status and q.list() == []
+
+def test_create_jobs_ignores_legacy_bitrate(env):
+    # #18：舊分頁還會送 outputs.audio.bitrate；忽略而不是 422，job.options.audio 也不含 bitrate
+    c, q, *_ = env
+    outputs = {"audio": {"versions": ["original"], "bitrate": 320}}
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": outputs}, headers=H)
+    assert r.status_code == 200
+    assert r.json()["jobs"][0]["options"]["audio"] == {"versions": ["original"], "format": "mp3", "model": "htdemucs_ft"}
 
 def test_create_jobs_rejects_legacy_mode(env):
     c, q, *_ = env

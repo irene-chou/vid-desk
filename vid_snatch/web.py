@@ -19,15 +19,14 @@ from .outputs import OutputOptions
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
 
 AudioFormat = Literal["mp3", "m4a", "wav", "flac"]
-Bitrate = Literal[128, 192, 320]
 DemucsModel = Literal["htdemucs", "htdemucs_ft"]
 MaxHeight = Literal[1080, 720]
 
 
 class AudioIn(BaseModel):
+    """#18 之後沒有 bitrate（固定 192k）；舊前端送來的 bitrate 欄位由 pydantic 預設 extra=ignore 吃掉，不回 422。"""
     versions: list[Literal["original", "instrumental", "vocals"]]
     format: AudioFormat = "mp3"
-    bitrate: Bitrate = 192
     model: DemucsModel = "htdemucs_ft"
 
 
@@ -53,7 +52,6 @@ class SettingsIn(BaseModel):
     """沒給的欄位維持原值；video_max_height 給 null 表示不限畫質。"""
     output_dir: str | None = None
     audio_format: AudioFormat | None = None
-    audio_bitrate: Bitrate | None = None
     demucs_model: DemucsModel | None = None
     video_max_height: MaxHeight | None = None
 

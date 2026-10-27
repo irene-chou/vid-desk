@@ -14,17 +14,17 @@ class FakeBackend:
             self.title_failures -= 1
             raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "Unable to extract title")
         return "Same Title"
-    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False, bitrate=192):
+    def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False):
         self.overwrites.append(overwrite)
-        self.calls.append(("download_audio", audio_format, bitrate))
+        self.calls.append(("download_audio", audio_format))
         if self.fail_once:
             self.fail_once = False
             raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "403")
         on_progress and on_progress(50.0)
         on_progress and on_progress(None)
         p = output_dir / f"{filename}.{audio_format}"; p.write_bytes(b"x" * 10); return p
-    def convert_audio(self, src, dst, audio_format, bitrate=192):
-        self.calls.append(("convert_audio", audio_format, bitrate))
+    def convert_audio(self, src, dst, audio_format):
+        self.calls.append(("convert_audio", audio_format))
         dst.write_bytes(b"y" * 5); return dst
     def download_video(self, url, output_dir, filename, on_progress=None, *, overwrite=False, max_height=None):
         self.overwrites.append(overwrite)
@@ -33,8 +33,8 @@ class FakeBackend:
         on_progress and on_progress(None)
         on_progress and on_progress(None)  # 影片 + 音訊兩個檔案各一次 finished
         p = output_dir / f"{filename}.mp4"; p.write_bytes(b"x"); return p
-    def separate(self, audio_path, output_dir, on_progress=None, *, model="htdemucs_ft", stems=("instrumental",), audio_format="mp3", bitrate=192):
-        self.calls.append(("separate", model, tuple(stems), audio_format, bitrate))
+    def separate(self, audio_path, output_dir, on_progress=None, *, model="htdemucs_ft", stems=("instrumental",), audio_format="mp3"):
+        self.calls.append(("separate", model, tuple(stems), audio_format))
         on_progress and on_progress(50.0)
         out = {}
         for s in stems:
@@ -166,14 +166,14 @@ def test_no_vocals_skips_name_with_existing_wav(q, tmp_path):
 # ---- 多輸出 ----
 
 def test_all_versions_download_once_and_separate_once(q, tmp_path):
-    job = q.add("https://youtu.be/a", {"audio": {"versions": ["vocals", "original", "instrumental"], "bitrate": 320}}, filename="song")
+    job = q.add("https://youtu.be/a", {"audio": {"versions": ["vocals", "original", "instrumental"]}}, filename="song")
     run_until_idle(q)
     assert job.state == "done"
     kinds = [c[0] for c in q.backend.calls]
     assert kinds == ["download_audio", "convert_audio", "separate"]
-    assert q.backend.calls[0] == ("download_audio", "wav", 320)
-    assert q.backend.calls[1] == ("convert_audio", "mp3", 320)
-    assert q.backend.calls[2] == ("separate", "htdemucs_ft", ("instrumental", "vocals"), "mp3", 320)
+    assert q.backend.calls[0] == ("download_audio", "wav")
+    assert q.backend.calls[1] == ("convert_audio", "mp3")
+    assert q.backend.calls[2] == ("separate", "htdemucs_ft", ("instrumental", "vocals"), "mp3")
     # 版本依固定順序排列，各自有結果路徑與大小
     assert [o.kind for o in job.outputs] == ["original", "instrumental", "vocals"]
     assert [o.state for o in job.outputs] == ["done"] * 3
@@ -190,11 +190,11 @@ def test_original_wav_with_separation_keeps_wav(q, tmp_path):
     assert [o.filename for o in job.outputs] == ["song.wav", "song_no_vocals.wav"]
 
 def test_m4a_stems_stay_m4a(q, tmp_path):
-    job = q.add("https://youtu.be/a", {"audio": {"versions": ["original", "vocals"], "format": "m4a", "bitrate": 320, "model": "htdemucs"}}, filename="song")
+    job = q.add("https://youtu.be/a", {"audio": {"versions": ["original", "vocals"], "format": "m4a", "model": "htdemucs"}}, filename="song")
     run_until_idle(q)
     assert [o.filename for o in job.outputs] == ["song.m4a", "song_vocals.m4a"]
     assert [o.ext for o in job.outputs] == ["m4a", "m4a"]
-    assert q.backend.calls[-1] == ("separate", "htdemucs", ("vocals",), "m4a", 320)
+    assert q.backend.calls[-1] == ("separate", "htdemucs", ("vocals",), "m4a")
 
 def test_audio_and_video_steps_and_output_states(q, tmp_path):
     events = q.subscribe()
@@ -277,7 +277,7 @@ def test_job_dict_schema(q):
                       "step_name", "percent", "message", "detail", "error_kind", "result_path", "title", "display_name",
                       "queue_position", "created_at", "started_at", "finished_at", "elapsed_seconds", "eta_seconds"}
     assert set(d["outputs"][0]) == {"kind", "ext", "state", "filename", "result_path", "size_bytes"}
-    assert d["options"]["audio"] == {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "bitrate": 192, "model": "htdemucs_ft"}
+    assert d["options"]["audio"] == {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "model": "htdemucs_ft"}
 
 def test_add_rejects_invalid_options(q):
     with pytest.raises(ValueError):

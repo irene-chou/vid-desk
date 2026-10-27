@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from . import core
-from .config import AUDIO_FORMATS, BITRATES, MAX_HEIGHTS
+from .config import AUDIO_FORMATS, MAX_HEIGHTS
 from .models import DEMUCS_MODEL, DEMUCS_MODELS
 
 VERSIONS = ("original", "instrumental", "vocals")
@@ -27,12 +27,12 @@ MODES = {
 class Backend(Protocol):
     def fetch_title(self, url: str) -> str: ...
     def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *,
-                       overwrite=False, bitrate=192) -> Path: ...
-    def convert_audio(self, src, dst, audio_format, bitrate=192) -> Path: ...
+                       overwrite=False) -> Path: ...
+    def convert_audio(self, src, dst, audio_format) -> Path: ...
     def download_video(self, url, output_dir, filename, on_progress=None, *,
                        overwrite=False, max_height=None) -> Path: ...
     def separate(self, audio_path, output_dir, on_progress=None, *,
-                      model=DEMUCS_MODEL, stems=("instrumental",), audio_format="mp3", bitrate=192) -> dict[str, Path]: ...
+                      model=DEMUCS_MODEL, stems=("instrumental",), audio_format="mp3") -> dict[str, Path]: ...
     def update_ytdlp(self, timeout=30) -> bool: ...
 
 
@@ -40,7 +40,6 @@ class Backend(Protocol):
 class AudioOptions:
     versions: list[str]
     format: str = "mp3"
-    bitrate: int = 192
     model: str = DEMUCS_MODEL
 
 
@@ -69,13 +68,10 @@ class OutputOptions:
             fmt = a.get("format", "mp3")
             if fmt not in AUDIO_FORMATS:
                 raise ValueError("未知的音檔格式")
-            bitrate = a.get("bitrate", 192)
-            if bitrate not in BITRATES:
-                raise ValueError("未知的位元率")
             model = a.get("model", DEMUCS_MODEL)
             if model not in DEMUCS_MODELS:
                 raise ValueError("未知的分離模型")
-            audio = AudioOptions([v for v in VERSIONS if v in versions], fmt, bitrate, model)
+            audio = AudioOptions([v for v in VERSIONS if v in versions], fmt, model)
         if data.get("video") is not None:
             h = (data["video"] or {}).get("max_height")
             if h is not None and h not in MAX_HEIGHTS:
@@ -87,12 +83,12 @@ class OutputOptions:
 
     @classmethod
     def from_mode(cls, mode: str, **settings) -> "OutputOptions":
-        """CLI 舊模式（mp3 / mp4 / no_vocals）轉成輸出選項；settings 可帶 format / bitrate / model / max_height。"""
+        """CLI 舊模式（mp3 / mp4 / no_vocals）轉成輸出選項；settings 可帶 format / model / max_height。"""
         if mode not in MODES:
             raise ValueError(f"未知模式：{mode}")
         data = {k: dict(v) for k, v in MODES[mode].items()}
         if "audio" in data:
-            data["audio"].update({k: settings[k] for k in ("format", "bitrate", "model") if k in settings})
+            data["audio"].update({k: settings[k] for k in ("format", "model") if k in settings})
         if "video" in data and "max_height" in settings:
             data["video"]["max_height"] = settings["max_height"]
         return cls.from_dict(data)
@@ -210,8 +206,7 @@ def execute(options: OutputOptions, url: str, output_dir: Path, name: str, backe
         if "original" in audio.versions:
             hooks.on_output("original", "running", None)
         hook = DownloadHook()
-        src = backend.download_audio(url, output_dir, name, download_format, hook,
-                                     overwrite=overwrite, bitrate=audio.bitrate)
+        src = backend.download_audio(url, output_dir, name, download_format, hook, overwrite=overwrite)
         hook.ensure_advanced()  # 轉檔
         keep_src = False
         try:
@@ -221,13 +216,13 @@ def execute(options: OutputOptions, url: str, output_dir: Path, name: str, backe
                     done("original", src)
                 else:
                     dst = output_dir / options.filename(name, "original")
-                    done("original", backend.convert_audio(src, dst, audio.format, audio.bitrate))
+                    done("original", backend.convert_audio(src, dst, audio.format))
             if options.needs_separation:
                 next_step()  # 分離
                 for stem in options.stems:
                     hooks.on_output(stem, "running", None)
                 stems = backend.separate(src, output_dir, hooks.on_progress, model=audio.model,
-                                              stems=options.stems, audio_format=audio.format, bitrate=audio.bitrate)
+                                         stems=options.stems, audio_format=audio.format)
                 for stem in options.stems:
                     done(stem, stems[stem])
         finally:
