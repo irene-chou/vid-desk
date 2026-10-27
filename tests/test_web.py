@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from vid_snatch import __version__
 from vid_snatch.web import create_app
 from vid_snatch.jobs import JobQueue
 from vid_snatch.hostactions import HostActionQueue
@@ -93,13 +94,21 @@ def test_settings_write(env):
 def test_settings_defaults(env):
     c, *_ = env
     assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
-                                             "demucs_model": "htdemucs_ft", "video_max_height": None}
+                                             "demucs_model": "htdemucs_ft", "video_max_height": None,
+                                             "version": __version__}
+
+def test_settings_reports_package_version(env):
+    # #25：頁首版本號從 GET /api/settings 的 version 來，等於 vid_snatch.__version__
+    c, *_ = env
+    assert c.get("/api/settings").json()["version"] == __version__
+    r = c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()
+    assert r["version"] == __version__
 
 def test_settings_details_partial_update_without_restart(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
     assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
-                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "restart_required": False}
+                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__, "restart_required": False}
     r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
     assert r["audio_format"] == "flac" and r["demucs_model"] == "htdemucs" and r["video_max_height"] is None
     assert c.get("/api/settings").json()["video_max_height"] is None

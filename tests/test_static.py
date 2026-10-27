@@ -11,9 +11,21 @@ HTML = (ROOT / "vid_snatch/static/index.html").read_text(encoding="utf-8")
 def test_required_ids_present():
     for i in ["urls", "paste", "out-audio", "out-video", "v-original", "v-instrumental", "v-vocals",
               "audio-adv", "audio-summary", "video-summary", "names", "names-row", "start", "start-count",
-              "jobs", "jobs-empty", "jobs-done", "done-divider", "clear-done", "stat-queued", "stat-running", "stat-done", "stat-failed",
+              "jobs", "jobs-empty", "jobs-done", "done-divider", "clear-done", "version",
               "settings-toggle", "settings", "settings-close", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall", "ask"]:
         assert f'id="{i}"' in HTML, i
+
+def test_header_shows_version_without_stats():
+    # #25：頁首只剩 logo + 名稱 + 版本（左）與齒輪（右）；四個狀態統計與 updateStats / jobsById 一併移除
+    for needle in ("stat-queued", "stat-running", "stat-done", "stat-failed", 'id="stats"', "updateStats", "jobsById", ".stat {", ".hdr .stat"):
+        assert needle not in HTML, needle
+    header = re.search(r'<header class="hdr">(.*?)</header>', HTML, re.S).group(1)
+    assert re.search(r'<div class="brand">.*<h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>', header)
+    assert header.count("<button") == 1 and 'id="settings-toggle"' in header
+    # 版本號：名稱右側等寬小字、--muted 色；載入設定時填入，取不到就維持隱藏
+    assert ".brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }" in HTML
+    assert "showVersion(data.version);" in HTML
+    assert re.search(r'function showVersion\(version\)\s*\{[^}]*if \(typeof version !== "string" \|\| !version\) return;\s*ver\.textContent = `v\$\{version\}`;\s*ver\.hidden = false;', HTML, re.S)
 
 def test_settings_is_modal_dialog():
     # #20：設定改成原生 <dialog> modal，開關不推擠版面

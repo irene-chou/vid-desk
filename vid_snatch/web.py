@@ -207,7 +207,7 @@ def create_app(
         return EventSourceResponse(stream(), ping=15)
 
     def _settings(output_dir: str) -> dict:
-        return {"output_dir": output_dir, **config.read_settings(config_dir)}
+        return {"output_dir": output_dir, **config.read_settings(config_dir), "version": __version__}
 
     @app.get("/api/settings")
     def get_settings():

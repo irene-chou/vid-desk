@@ -54,15 +54,12 @@
   }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; gap: 16px; }
-    .hdr .stat { display: none; }
   }
   .hdr { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
   .brand h1 { font: inherit; margin: 0; }
   .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
-  .stat { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); display: flex; gap: 14px; }
-  .stat span { display: inline-flex; gap: 5px; align-items: center; }
-  .stat b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }
 
   /* ===== 按鈕 ===== */
   button { font: inherit; font-size: 0.88rem; padding: 7px 14px; border-radius: var(--r-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
@@ -230,13 +227,7 @@
 
 <div class="app">
   <header class="hdr">
-    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1></div>
-    <div class="stat" id="stats" aria-label="工作統計">
-      <span title="排隊中"><svg class="ic"><use href="#i-clock"/></svg><b id="stat-queued">0</b></span>
-      <span title="進行中"><svg class="ic spin"><use href="#i-loader"/></svg><b id="stat-running">0</b></span>
-      <span title="完成"><svg class="ic"><use href="#i-checkc"/></svg><b id="stat-done">0</b></span>
-      <span title="失敗"><svg class="ic"><use href="#i-xc"/></svg><b id="stat-failed">0</b></span>
-    </div>
+    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>
     <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
 
@@ -508,7 +499,6 @@ let infoTimer = null;
 let shownUrls = [];
 let submitting = false;
 const cards = new Map();   // job.id -> <li class="job">
-const jobsById = new Map(); // job.id -> 最新 job dict（頂部統計用）
 const clearedIds = new Set();   // 「清除已完成」隱藏掉的工作；SSE 重連重播時不再畫回來
 const expandedDetails = new Set(); // 「查看詳情」展開中的工作，重畫卡片時維持展開
 const timing = new Map();   // 進行中工作 id -> timingBase（前端每秒計時用）
@@ -1034,7 +1024,6 @@ function renderJob(job) {
   // 狀態變成完成 / 失敗 / 取消時搬到「已完成」區；新卡片一律放最上面（新到舊）
   const list = listFor(job.state);
   if (card.parentNode !== list) list.prepend(card);
-  jobsById.set(job.id, job);
   if (job.state === "running") timing.set(job.id, timingBase(job, performance.now()));
   else timing.delete(job.id);
   if (job.state !== "failed") expandedDetails.delete(job.id);
@@ -1043,7 +1032,6 @@ function renderJob(job) {
   card.dataset.state = job.state;
   card.replaceChildren(...buildCardBody(job, card));
   refreshQueueChrome();
-  updateStats();
   syncTimer();
 }
 
@@ -1053,12 +1041,6 @@ function refreshQueueChrome() {
   empty.hidden = jobsEl.childElementCount > 0;
   empty.textContent = cards.size > 0 ? "沒有進行中的工作" : "還沒有下載工作";
   $("done-divider").hidden = doneEl.childElementCount === 0;
-}
-
-function updateStats() {
-  const counts = { queued: 0, running: 0, done: 0, failed: 0 };
-  for (const job of jobsById.values()) if (job.state in counts) counts[job.state] += 1;
-  for (const [state, n] of Object.entries(counts)) $(`stat-${state}`).textContent = String(n);
 }
 
 // 「已耗時 / 預估總時」每秒由前端更新；沒有進行中的卡片就停掉計時器
@@ -1081,12 +1063,10 @@ function clearDone() {
     const id = card.dataset.id;
     clearedIds.add(id);
     cards.delete(id);
-    jobsById.delete(id);
     expandedDetails.delete(id);
     card.remove();
   }
   refreshQueueChrome();
-  updateStats();
 }
 
 async function loadJobs() {
@@ -1129,10 +1109,19 @@ function onSettingsBackdropClick(event) {
   if (!inside) dialog.close();
 }
 
+// 頁首版本號：來自 GET /api/settings 的 version；取不到就不顯示
+function showVersion(version) {
+  const ver = $("version");
+  if (typeof version !== "string" || !version) return;
+  ver.textContent = `v${version}`;
+  ver.hidden = false;
+}
+
 async function loadSettings() {
   try {
     const data = await getJson("/api/settings");
     $("output-dir").textContent = data.output_dir;
+    showVersion(data.version);
     outputState = applySettings(outputState, data);
     renderOutputs();
   } catch (e) {
