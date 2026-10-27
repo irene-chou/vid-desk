@@ -4,129 +4,231 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vid-snatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
 <style>
+  /* ===== 視覺 token（docs/superpowers/specs/2026-10-27-console-ui-design.md） ===== */
   :root {
     color-scheme: light dark;
-    --bg: #f6f6f4;
-    --surface: #ffffff;
-    --text: #1d1d1f;
-    --muted: #6b6b70;
-    --border: #dcdcd8;
-    --accent: #2f6fde;
-    --accent-text: #ffffff;
-    --danger: #c62828;
-    --ok: #2e7d32;
-    --track: #e7e7e3;
+    --bg: #f5f6f8; --panel: #ffffff; --fg: #16181d; --muted: #6b7280; --line: #e2e4e9; --sub: #eef0f3;
+    --accent: #0f766e; --accent-fg: #ffffff; --ok: #15803d; --bad: #b91c1c; --warn: #b45309;
+    --sans: "IBM Plex Sans", "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --r-panel: 12px; --r-card: 10px; --r-btn: 8px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #161618;
-      --surface: #212124;
-      --text: #ececee;
-      --muted: #a0a0a6;
-      --border: #3a3a3f;
-      --accent: #5b8ff0;
-      --accent-text: #0e0e10;
-      --danger: #ef6b6b;
-      --ok: #6cc070;
-      --track: #34343a;
+      --bg: #0f1114; --panel: #171a1f; --fg: #e6e8ec; --muted: #8b919c; --line: #262a31; --sub: #1f232a;
+      --accent: #2dd4bf; --accent-fg: #06201c; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
     }
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; }
   body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
-    font-size: 16px;
-    line-height: 1.5;
+    background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 720px; margin: 0 auto; padding: 16px; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  h1 { font-size: 1.4rem; margin: 0; }
-  button {
-    font: inherit;
-    padding: 8px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-  }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  button.danger { color: var(--danger); border-color: var(--danger); }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-  textarea, input[type="text"] {
-    width: 100%;
-    font: inherit;
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-  }
-  textarea { min-height: 110px; resize: vertical; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-  .modes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-  .modes label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-  .hint { color: var(--muted); font-size: 0.85rem; }
-  .field-label { display: block; margin: 12px 0 4px; }
-  #names { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .name-url { color: var(--muted); font-size: 0.8rem; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .errors { color: var(--danger); margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
-  .errors:empty { display: none; }
-  .form-error { color: var(--danger); margin-top: 8px; }
-  .form-error:empty { display: none; }
-  #start { width: 100%; margin-top: 16px; padding: 12px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
-  #jobs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-  .card-head { display: flex; gap: 8px; align-items: baseline; }
-  .card-icon { flex: none; width: 1.4em; text-align: center; }
-  .card-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
-  .card.done .card-icon { color: var(--ok); }
-  .card.failed .card-icon { color: var(--danger); }
-  .card-step { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
-  .card progress { width: 100%; height: 8px; margin-top: 6px; accent-color: var(--accent); }
-  .card-message { color: var(--danger); margin-top: 6px; }
-  .card details { margin-top: 4px; font-size: 0.9rem; }
-  .card pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); margin: 6px 0 0; }
-  .card .row { margin-top: 8px; }
-  .empty { color: var(--muted); text-align: center; padding: 12px; }
-
-  #settings h2 { font-size: 1.1rem; margin: 0 0 8px; }
-  #output-dir { overflow-wrap: anywhere; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9rem; }
-  .notice { color: var(--ok); }
-  #settings details { margin-top: 16px; }
-  #settings summary { cursor: pointer; color: var(--muted); }
-
-  dialog {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    color: var(--text);
-    max-width: min(420px, calc(100vw - 32px));
-    padding: 20px;
+  /* ===== 圖示 ===== */
+  .ic { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; flex: none; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spin { animation: none; }
+    .bar.indet i { animation: none; }
+    .adv > summary .chev { transition: none; }
   }
-  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
-  dialog p { margin: 0 0 16px; font-weight: 600; }
+
+  /* ===== 版面 ===== */
+  .app {
+    max-width: 1100px; margin: 0 auto;
+    padding: 16px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
+    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start;
+  }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; gap: 16px; }
+    .hdr .stat { display: none; }
+  }
+  .hdr { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand h1 { font: inherit; margin: 0; }
+  .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
+  .stat { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); display: flex; gap: 14px; }
+  .stat span { display: inline-flex; gap: 5px; align-items: center; }
+  .stat b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .settings { grid-column: 1 / -1; }
+
+  /* ===== 按鈕 ===== */
+  button { font: inherit; font-size: 0.88rem; padding: 7px 14px; border-radius: var(--r-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  button.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+  .ibtn { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: var(--r-btn); width: 34px; height: 34px; display: inline-grid; place-items: center; font-size: 1rem; padding: 0; }
+  .ibtn.sm { width: 28px; height: 28px; font-size: 0.9rem; border-radius: 7px; }
+  .ibtn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .ibtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .ibtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+  /* ===== 面板與欄位 ===== */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 16px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .lbl { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+  .field { display: grid; gap: 6px; min-width: 0; }
+  .ta { width: 100%; min-height: 88px; border: 1px solid var(--line); border-radius: var(--r-btn); padding: 10px; font-family: var(--mono); font-size: 0.8rem; line-height: 1.6; background: var(--sub); color: var(--fg); resize: vertical; }
+  .ta::placeholder { color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+  .errors { color: var(--bad); margin: 0; padding-left: 18px; font-size: 0.82rem; }
+  .errors:empty { display: none; }
+  .form-error { color: var(--bad); font-size: 0.85rem; display: flex; gap: 6px; align-items: flex-start; }
+  .form-error:empty { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .notice { color: var(--ok); font-size: 0.85rem; }
+  .notice:empty { display: none; }
+
+  /* 輸出選項卡 */
+  .out { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--panel); overflow: hidden; }
+  .out.on { border-color: var(--accent); }
+  .out-h { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; min-height: 44px; }
+  .out.on .out-h { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+  .out-h input { margin: 0; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .out-h .t { font-weight: 600; font-size: 0.9rem; display: flex; gap: 8px; align-items: center; }
+  .out-h .sum { margin-left: auto; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .out-b { padding: 10px 12px 12px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+  .out:not(.on) .out-b { display: none; }
+  .sub { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; font-size: 0.82rem; }
+  .sub .k { color: var(--muted); font-size: 0.74rem; display: inline-flex; gap: 5px; align-items: center; }
+  .sub.dim { opacity: 0.45; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; min-height: 28px; border-radius: 999px; border: 1px solid var(--line); font-size: 0.8rem; cursor: pointer; background: var(--panel); color: var(--fg); }
+  .chip input { margin: 0; accent-color: var(--accent); width: 14px; height: 14px; }
+  .chip.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+  .chip small { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; padding: 2px; gap: 2px; background: var(--sub); }
+  .seg label { position: relative; padding: 3px 9px; min-height: 24px; border-radius: 5px; font-size: 0.76rem; font-family: var(--mono); cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+  .seg label.on { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+  .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+  .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .adv { border-top: 1px dashed var(--line); padding-top: 8px; }
+  .adv > summary { list-style: none; cursor: pointer; font-size: 0.76rem; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; min-height: 28px; }
+  .adv > summary::-webkit-details-marker { display: none; }
+  .adv > summary .chev { transition: transform 150ms; }
+  .adv[open] > summary .chev { transform: rotate(180deg); }
+  .adv .sub { margin-top: 8px; }
+
+  /* 檔名列 */
+  #names { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .name { display: grid; grid-template-columns: 1fr; gap: 2px; min-width: 0; }
+  .name .u { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 5px; align-items: center; }
+  .name input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 0.85rem; background: var(--panel); color: var(--fg); }
+  .name input::placeholder { color: var(--muted); }
+
+  /* 開始 */
+  .go { width: 100%; padding: 11px 14px; border-radius: var(--r-btn); border: 0; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; font-size: 0.92rem; cursor: pointer; display: flex; justify-content: center; gap: 10px; align-items: center; min-height: 44px; }
+  .go:hover:not(:disabled) { filter: brightness(1.08); }
+  .go .cnt { font-family: var(--mono); font-weight: 500; font-size: 0.74rem; opacity: 0.85; background: rgba(0, 0, 0, 0.15); padding: 2px 8px; border-radius: 999px; }
+  .go .cnt:empty { display: none; }
+
+  /* ===== 排隊 ===== */
+  .q { display: grid; gap: 10px; align-content: start; min-width: 0; }
+  .qh { display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+  #jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .job { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 12px 14px; display: grid; gap: 8px; border-left-width: 3px; min-width: 0; }
+  .job.running { border-left-color: var(--accent); }
+  .job.done { border-left-color: var(--ok); }
+  .job.failed { border-left-color: var(--bad); }
+  .job.queued { border-left-color: var(--line); }
+  .jt { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .jt .n { font-weight: 600; font-size: 0.92rem; min-width: 0; overflow-wrap: anywhere; }
+  .st { font-family: var(--mono); font-size: 0.72rem; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+  .running .st { color: var(--accent); } .done .st { color: var(--ok); } .failed .st { color: var(--bad); } .queued .st { color: var(--muted); }
+  .kv { display: grid; grid-template-columns: 18px 1fr; gap: 3px 8px; font-size: 0.76rem; font-family: var(--mono); color: var(--muted); align-items: center; }
+  .kv .ic { color: var(--muted); }
+  .kv b { font-weight: 400; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv a { color: var(--accent); text-decoration: none; }
+  .outs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .o { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; font-family: var(--mono); }
+  .o.did { border-color: color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok); }
+  .o.now { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .o.bad { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); }
+  .bar { height: 6px; border-radius: 3px; background: var(--sub); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .bar.indet i { width: 30%; animation: indet 1.2s ease-in-out infinite alternate; }
+  @keyframes indet { from { transform: translateX(-20%); } to { transform: translateX(260%); } }
+  .pct { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .acts { display: flex; gap: 6px; justify-content: flex-end; }
+  .err { font-size: 0.8rem; color: var(--bad); display: flex; gap: 6px; align-items: flex-start; }
+  .err .ic { margin-top: 0.2em; }
+  .detail { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); margin: 0; font-family: var(--mono); font-size: 0.72rem; background: var(--sub); border-radius: 7px; padding: 8px 10px; }
+  .divider { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 12px; font-size: 0.85rem; border: 1px dashed var(--line); border-radius: var(--r-panel); }
+
+  /* ===== 設定 ===== */
+  .kvline { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; font-size: 0.85rem; }
+  .kvline .k { color: var(--muted); font-size: 0.74rem; }
+  #output-dir { overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.8rem; }
+  .settings details > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; min-height: 28px; display: inline-flex; align-items: center; }
+  .settings details .row { margin-top: 8px; }
+
+  /* ===== 對話框 ===== */
+  dialog { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--fg); max-width: min(420px, calc(100vw - 32px)); padding: 20px; font-family: var(--sans); }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+  dialog p { margin: 0 0 16px; font-weight: 600; overflow-wrap: anywhere; }
   .dialog-buttons { display: flex; flex-direction: column; gap: 8px; }
+  .dialog-buttons button { padding: 10px 14px; }
   .ended { text-align: center; padding: 80px 16px; font-size: 1.2rem; }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>vid-snatch</h1>
-    <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings">⚙ 設定</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.2 3.9A2 2 0 0 0 7.5 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-xc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-checkc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 12h20M2 7.5h5M2 16.5h5M17 7.5h5M17 16.5h5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="m2 2 20 20M18.9 13.2A7 7 0 0 0 19 12v-2M5 10v2a7 7 0 0 0 12 5M15 9.3V5a3 3 0 0 0-5.9-.7M9 9v3a3 3 0 0 0 5.1 2.1M12 19v3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-title" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20M12 22 7 9l5-6 5 6z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="hdr">
+    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1></div>
+    <div class="stat" id="stats" aria-label="工作統計">
+      <span title="排隊中"><svg class="ic"><use href="#i-clock"/></svg><b id="stat-queued">0</b></span>
+      <span title="進行中"><svg class="ic spin"><use href="#i-loader"/></svg><b id="stat-running">0</b></span>
+      <span title="完成"><svg class="ic"><use href="#i-checkc"/></svg><b id="stat-done">0</b></span>
+      <span title="失敗"><svg class="ic"><use href="#i-xc"/></svg><b id="stat-failed">0</b></span>
+    </div>
+    <button id="settings-toggle" class="ibtn" type="button" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
 
-  <section id="settings" class="panel" hidden>
-    <h2>設定</h2>
-    <div>下載資料夾：</div>
-    <div id="output-dir">讀取中…</div>
+  <section id="settings" class="panel settings" hidden aria-label="設定">
+    <div class="lbl">設定</div>
+    <div class="kvline"><span class="k">下載資料夾</span><span id="output-dir">讀取中…</span></div>
     <div id="folder-notice" class="notice" hidden>已更新，下次啟動生效</div>
     <div class="row">
       <button id="pick-folder" type="button">更換資料夾</button>
@@ -142,31 +244,87 @@
     </details>
   </section>
 
-  <section class="panel">
-    <textarea id="urls" placeholder="貼上 YouTube 網址（一行一個）" aria-label="YouTube 網址"></textarea>
-    <ul id="url-errors" class="errors"></ul>
-    <div class="row">
-      <button id="paste" type="button">貼上</button>
+  <section class="panel" id="input" aria-label="新工作">
+    <div class="field">
+      <div class="lbl"><label for="urls">網址</label><button id="paste" class="ibtn sm" type="button" aria-label="貼上剪貼簿" title="貼上剪貼簿"><svg class="ic"><use href="#i-paste"/></svg></button></div>
+      <textarea class="ta" id="urls" placeholder="貼上 YouTube 網址，一行一個" spellcheck="false"></textarea>
+      <ul id="url-errors" class="errors"></ul>
     </div>
 
-    <div class="modes" role="radiogroup" aria-label="下載格式">
-      <label><input type="radio" name="mode" id="mode-mp3" value="mp3" checked> 音檔 MP3</label>
-      <label><input type="radio" name="mode" id="mode-no_vocals" value="no_vocals"> 去人聲 MP3 <span class="hint">約 3–8 分鐘</span></label>
-      <label><input type="radio" name="mode" id="mode-mp4" value="mp4"> 影片 MP4</label>
+    <div class="field">
+      <div class="lbl">輸出</div>
+
+      <div class="out on" id="out-audio-card">
+        <label class="out-h">
+          <input type="checkbox" id="out-audio" checked>
+          <span class="t"><svg class="ic"><use href="#i-music"/></svg>音檔</span>
+          <span class="sum" id="audio-summary"></span>
+        </label>
+        <div class="out-b">
+          <div class="sub">
+            <span class="k"><svg class="ic"><use href="#i-list"/></svg>版本</span>
+            <div class="chips" role="group" aria-label="音檔版本">
+              <label class="chip on"><input type="checkbox" id="v-original" data-version="original" checked><svg class="ic"><use href="#i-disc"/></svg>原曲</label>
+              <label class="chip"><input type="checkbox" id="v-instrumental" data-version="instrumental"><svg class="ic"><use href="#i-mic-off"/></svg>伴奏 <small id="sep-hint"></small></label>
+              <label class="chip"><input type="checkbox" id="v-vocals" data-version="vocals"><svg class="ic"><use href="#i-mic"/></svg>人聲</label>
+            </div>
+          </div>
+          <details class="adv" id="audio-adv">
+            <summary><svg class="ic"><use href="#i-sliders"/></svg>細項<svg class="ic chev"><use href="#i-chev"/></svg></summary>
+            <div class="sub"><span class="k" id="lbl-fmt">格式</span>
+              <div class="seg" role="radiogroup" aria-labelledby="lbl-fmt">
+                <label><input type="radio" name="fmt" value="mp3">MP3</label>
+                <label><input type="radio" name="fmt" value="m4a">M4A</label>
+                <label><input type="radio" name="fmt" value="wav">WAV</label>
+                <label><input type="radio" name="fmt" value="flac">FLAC</label>
+              </div></div>
+            <div class="sub" id="row-bitrate"><span class="k" id="lbl-br">位元率</span>
+              <div class="seg" role="radiogroup" aria-labelledby="lbl-br">
+                <label><input type="radio" name="br" value="128">128k</label>
+                <label><input type="radio" name="br" value="192">192k</label>
+                <label><input type="radio" name="br" value="320">320k</label>
+              </div></div>
+            <div class="sub" id="row-model"><span class="k" id="lbl-mdl">分離模型</span>
+              <div class="seg" role="radiogroup" aria-labelledby="lbl-mdl">
+                <label title="htdemucs，約 1–2 分鐘"><input type="radio" name="mdl" value="htdemucs"><svg class="ic"><use href="#i-zap"/></svg>快速</label>
+                <label title="htdemucs_ft，約 3–8 分鐘"><input type="radio" name="mdl" value="htdemucs_ft"><svg class="ic"><use href="#i-gem"/></svg>高品質</label>
+              </div></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="out" id="out-video-card">
+        <label class="out-h">
+          <input type="checkbox" id="out-video">
+          <span class="t"><svg class="ic"><use href="#i-film"/></svg>影片</span>
+          <span class="sum" id="video-summary"></span>
+        </label>
+        <div class="out-b">
+          <div class="sub"><span class="k" id="lbl-res">畫質上限</span>
+            <div class="seg" role="radiogroup" aria-labelledby="lbl-res">
+              <label><input type="radio" name="res" value="">最佳</label>
+              <label><input type="radio" name="res" value="1080">1080p</label>
+              <label><input type="radio" name="res" value="720">720p</label>
+            </div></div>
+        </div>
+      </div>
     </div>
 
-    <div id="names-row" hidden>
-      <div class="field-label">檔名（可直接修改）</div>
+    <div class="field" id="names-row" hidden>
+      <div class="lbl">檔名</div>
       <ul id="names"></ul>
     </div>
 
-    <button id="start" type="button" class="primary" disabled>開始</button>
-    <div id="form-error" class="form-error"></div>
+    <button id="start" type="button" class="go" disabled><svg class="ic"><use href="#i-play"/></svg><span id="start-label">開始</span><span class="cnt" id="start-count"></span></button>
+    <div id="form-error" class="form-error" role="alert"></div>
   </section>
 
-  <ul id="jobs"></ul>
-  <div id="jobs-empty" class="empty">還沒有下載工作</div>
-</main>
+  <section class="q" id="queue" aria-label="排隊">
+    <div class="qh"><span class="lbl">進行中與排隊</span></div>
+    <ul id="jobs"></ul>
+    <div id="jobs-empty" class="empty">還沒有下載工作</div>
+  </section>
+</div>
 
 <dialog id="ask">
   <p id="ask-title"></p>
@@ -176,13 +334,101 @@
 <script>
 "use strict";
 
+// ===== 輸出選項狀態機（純函式；tests/outputs_state.test.mjs 以 node 直接測這一段） =====
+// @@outputs-state-begin
+const VERSION_ORDER = ["original", "instrumental", "vocals"];
+const VERSION_LABELS = { original: "原曲", instrumental: "伴奏", vocals: "人聲" };
+const FORMATS = ["mp3", "m4a", "wav", "flac"];
+const BITRATES = [128, 192, 320];
+const MODELS = ["htdemucs", "htdemucs_ft"];
+const MAX_HEIGHTS = [1080, 720];
+const LOSSLESS = ["wav", "flac"];
+
+// 每次載入都回到預設：只勾音檔、只勾原曲；細項由 GET /api/settings 覆寫
+function defaultOutputState() {
+  return {
+    audio: true, versions: { original: true, instrumental: false, vocals: false },
+    format: "mp3", bitrate: 192, model: "htdemucs_ft",
+    video: false, maxHeight: null,
+  };
+}
+
+function orderedVersions(versions) {
+  return VERSION_ORDER.filter((v) => versions[v]);
+}
+
+function needsSeparation(state) {
+  return !!(state.versions.instrumental || state.versions.vocals);
+}
+
+// POST /api/jobs 的 outputs；沒勾的那邊送 null
+function outputsPayload(state) {
+  return {
+    audio: state.audio
+      ? { versions: orderedVersions(state.versions), format: state.format, bitrate: state.bitrate, model: state.model }
+      : null,
+    video: state.video ? { max_height: state.maxHeight } : null,
+  };
+}
+
+// 每個網址會產生幾個檔案
+function outputCount(state) {
+  return (state.audio ? orderedVersions(state.versions).length : 0) + (state.video ? 1 : 0);
+}
+
+function audioSummary(state) {
+  const fmt = state.format.toUpperCase();
+  const head = LOSSLESS.includes(state.format) ? fmt : `${fmt} ${state.bitrate}k`;
+  const names = orderedVersions(state.versions).map((v) => VERSION_LABELS[v]);
+  return `${head} · ${names.length ? names.join(" + ") : "未選版本"}`;
+}
+
+function videoSummary(state) {
+  return `MP4 · ${state.maxHeight ? `${state.maxHeight}p` : "最佳畫質"}`;
+}
+
+// 「開始」是否可按與原因；files = 網址數 × 每網址輸出數
+function startStatus(state, urlCount) {
+  let reason = "";
+  if (!state.audio && !state.video) reason = "至少要選一種輸出";
+  else if (state.audio && orderedVersions(state.versions).length === 0) reason = "音檔至少要勾一個版本";
+  return { ok: !reason, reason, files: outputCount(state) * urlCount };
+}
+
+// GET /api/exists 的 query string
+function existsQuery(state, filename) {
+  const params = new URLSearchParams({ filename });
+  if (state.audio) {
+    params.set("versions", orderedVersions(state.versions).join(","));
+    params.set("format", state.format);
+  }
+  if (state.video) params.set("video", "true");
+  return params.toString();
+}
+
+// 把 GET /api/settings 的細項套進狀態；不合法的值維持原樣
+function applySettings(state, settings) {
+  const next = { ...state, versions: { ...state.versions } };
+  if (FORMATS.includes(settings.audio_format)) next.format = settings.audio_format;
+  if (BITRATES.includes(settings.audio_bitrate)) next.bitrate = settings.audio_bitrate;
+  if (MODELS.includes(settings.demucs_model)) next.model = settings.demucs_model;
+  if (settings.video_max_height === null || MAX_HEIGHTS.includes(settings.video_max_height)) {
+    next.maxHeight = settings.video_max_height;
+  }
+  return next;
+}
+// @@outputs-state-end
+
 const URL_RE = /youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/|music\.youtube\.com\/watch\?/;
-const STATE_ICONS = { queued: "⏳", running: "▶", done: "✓", failed: "✗" };
+const STATE_ICONS = { queued: "clock", running: "loader", done: "checkc", failed: "xc" };
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 const $ = (id) => document.getElementById(id);
 const urlsEl = $("urls");
 const startEl = $("start");
 const jobsEl = $("jobs");
+
+let outputState = defaultOutputState();
 
 // 每個網址的標題狀態：{ status: "loading" | "ok" | "failed", value, touched, input }
 const titles = new Map();
@@ -192,7 +438,49 @@ let titleActive = 0;
 let infoTimer = null;
 let shownUrls = [];
 let submitting = false;
-const cards = new Map();
+const cards = new Map();   // job.id -> <li class="job">
+const jobsById = new Map(); // job.id -> 最新 job dict（頂部統計用）
+
+// ---------- 小工具 ----------
+
+function icon(name, extraClass) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", extraClass ? `ic ${extraClass}` : "ic");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function el(tag, className, ...children) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.append(...children);
+  return node;
+}
+
+function iconButton(name, label, onClick, extraClass) {
+  const btn = el("button", extraClass ? `ibtn ${extraClass}` : "ibtn", icon(name));
+  btn.type = "button";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function shortUrl(url) {
+  return url.replace(/^https?:\/\/(www\.)?/, "");
+}
+
+function fmtDuration(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "";
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  return m >= 60
+    ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
+    : `${m}:${String(s % 60).padStart(2, "0")}`;
+}
 
 // ---------- HTTP ----------
 
@@ -258,6 +546,83 @@ function ask(title, choices) {
   });
 }
 
+// ---------- 輸出選項 ----------
+
+function setFormError(text) {
+  const box = $("form-error");
+  box.replaceChildren();
+  if (text) box.append(icon("alert"), document.createTextNode(text));
+}
+
+function readOutputState() {
+  const state = { ...outputState, versions: { ...outputState.versions } };
+  state.audio = $("out-audio").checked;
+  state.video = $("out-video").checked;
+  for (const cb of document.querySelectorAll("[data-version]")) state.versions[cb.dataset.version] = cb.checked;
+  const fmt = document.querySelector('input[name="fmt"]:checked');
+  if (fmt) state.format = fmt.value;
+  const br = document.querySelector('input[name="br"]:checked');
+  if (br) state.bitrate = Number(br.value);
+  const mdl = document.querySelector('input[name="mdl"]:checked');
+  if (mdl) state.model = mdl.value;
+  const res = document.querySelector('input[name="res"]:checked');
+  if (res) state.maxHeight = res.value ? Number(res.value) : null;
+  return state;
+}
+
+function checkRadio(name, value) {
+  for (const input of document.querySelectorAll(`input[name="${name}"]`)) input.checked = input.value === value;
+}
+
+// 把狀態畫回表單：卡片開合、chip / 分段開關的 on、摘要文字、灰掉的列
+function renderOutputs() {
+  const s = outputState;
+  $("out-audio").checked = s.audio;
+  $("out-video").checked = s.video;
+  $("out-audio-card").classList.toggle("on", s.audio);
+  $("out-video-card").classList.toggle("on", s.video);
+  for (const cb of document.querySelectorAll("[data-version]")) {
+    cb.checked = !!s.versions[cb.dataset.version];
+    cb.closest(".chip").classList.toggle("on", cb.checked);
+  }
+  checkRadio("fmt", s.format);
+  checkRadio("br", String(s.bitrate));
+  checkRadio("mdl", s.model);
+  checkRadio("res", s.maxHeight ? String(s.maxHeight) : "");
+  for (const label of document.querySelectorAll(".seg label")) {
+    label.classList.toggle("on", label.querySelector("input").checked);
+  }
+  $("audio-summary").textContent = audioSummary(s);
+  $("video-summary").textContent = videoSummary(s);
+  $("row-bitrate").classList.toggle("dim", LOSSLESS.includes(s.format));
+  $("row-bitrate").title = LOSSLESS.includes(s.format) ? "WAV / FLAC 不受位元率影響" : "";
+  $("row-model").classList.toggle("dim", !needsSeparation(s));
+  $("row-model").title = needsSeparation(s) ? "" : "勾了伴奏或人聲才會用到";
+  $("sep-hint").textContent = s.model === "htdemucs" ? "1–2 分" : "3–8 分";
+  refreshForm();
+}
+
+const SETTING_KEYS = { fmt: "audio_format", br: "audio_bitrate", mdl: "demucs_model", res: "video_max_height" };
+
+async function onOutputsChange(event) {
+  const before = outputState;
+  outputState = readOutputState();
+  renderOutputs();
+  // 細項改了就存回設定；「版本」與兩個大選項不存
+  const key = SETTING_KEYS[event.target.name];
+  if (!key) return;
+  const value = { audio_format: outputState.format, audio_bitrate: outputState.bitrate,
+                  demucs_model: outputState.model, video_max_height: outputState.maxHeight }[key];
+  const previous = { audio_format: before.format, audio_bitrate: before.bitrate,
+                     demucs_model: before.model, video_max_height: before.maxHeight }[key];
+  if (value === previous) return;
+  try {
+    await postJson("/api/settings", { [key]: value });
+  } catch (e) {
+    setFormError(`細項沒有存成功：${e.message || "發生錯誤"}`);
+  }
+}
+
 // ---------- 網址輸入 ----------
 
 function readLines() {
@@ -284,8 +649,12 @@ function refreshForm() {
     const status = titles.get(u)?.status;
     return status === undefined || status === "loading";
   });
-  startEl.disabled = submitting || loading || valid.length === 0 || bad.length > 0;
-  if (!submitting) startEl.textContent = loading ? "讀取影片標題中…" : "開始";
+  const status = startStatus(outputState, valid.length);
+  startEl.disabled = submitting || loading || valid.length === 0 || bad.length > 0 || !status.ok;
+  startEl.title = status.reason;
+  $("start-label").textContent = submitting ? "處理中…" : loading ? "讀取影片標題中…" : "開始";
+  $("start-count").textContent = !status.ok ? status.reason
+    : valid.length ? `${valid.length} 網址 · ${status.files} 檔案` : "";
   return { valid, bad };
 }
 
@@ -298,10 +667,9 @@ function renderNames(urls) {
   const list = $("names");
   list.replaceChildren(...urls.map((url) => {
     const entry = titles.get(url);
-    const li = document.createElement("li");
-    const label = document.createElement("div");
-    label.className = "name-url";
-    label.textContent = url;
+    const li = el("li", "name");
+    const label = el("span", "u", icon("link"), document.createTextNode(shortUrl(url)));
+    label.title = url;
     const input = document.createElement("input");
     input.type = "text";
     input.autocomplete = "off";
@@ -321,7 +689,7 @@ function updatePlaceholder(entry) {
   if (!entry.input) return;
   entry.input.placeholder = {
     loading: "讀取影片標題中…",
-    ok: "",
+    ok: "留空則用原標題",
     failed: "讀不到標題，可自己輸入檔名",
   }[entry.status];
 }
@@ -361,7 +729,7 @@ async function fetchTitle(url) {
 }
 
 function onUrlsInput() {
-  $("form-error").textContent = "";
+  setFormError("");
   clearTimeout(infoTimer);
   // 打字中先擋住「開始」，停 500ms 後再讀標題、列檔名
   startEl.disabled = true;
@@ -387,23 +755,18 @@ async function pasteFromClipboard() {
 
 // ---------- 開始下載 ----------
 
-function selectedMode() {
-  return document.querySelector('input[name="mode"]:checked').value;
-}
-
 function setSubmitting(value) {
   submitting = value;
   urlsEl.disabled = value;
   for (const entry of titles.values()) if (entry.input) entry.input.disabled = value;
   $("paste").disabled = value;
-  startEl.textContent = value ? "處理中…" : "開始";
+  for (const input of document.querySelectorAll("#input .out input")) input.disabled = value;
   refreshForm();
 }
 
-async function resolveOverwrite(mode, filename) {
+async function resolveOverwrite(state, filename) {
   if (!filename) return { filename, overwrite: false };
-  const query = `filename=${encodeURIComponent(filename)}&mode=${encodeURIComponent(mode)}`;
-  const check = await getJson(`/api/exists?${query}`);
+  const check = await getJson(`/api/exists?${existsQuery(state, filename)}`);
   if (!check.exists) return { filename, overwrite: false };
   const choice = await ask(`已有同名檔案「${filename}」`, [
     { label: "覆蓋", value: "overwrite", className: "primary" },
@@ -418,116 +781,101 @@ async function startJobs() {
   const { valid, bad } = readLines();
   if (valid.length === 0 || bad.length > 0) return;
   if (startEl.disabled) return;
-  const mode = selectedMode();
-  $("form-error").textContent = "";
+  const state = outputState;
+  if (!startStatus(state, valid.length).ok) return;
+  setFormError("");
   setSubmitting(true);
   try {
     const filenames = [];
     const overwrites = [];
     for (const url of valid) {
-      const decision = await resolveOverwrite(mode, titles.get(url).value.trim());
+      const decision = await resolveOverwrite(state, titles.get(url).value.trim());
       if (decision === null) return;
       filenames.push(decision.filename || null);
       overwrites.push(decision.overwrite);
     }
-    const data = await postJson("/api/jobs", { urls: valid, mode, filenames, overwrites });
+    const data = await postJson("/api/jobs", { urls: valid, outputs: outputsPayload(state), filenames, overwrites });
     (data.jobs || []).forEach(renderIfNew);
     urlsEl.value = "";
     titles.clear();
     renderNames([]);
   } catch (e) {
-    $("form-error").textContent = e.message || "發生錯誤";
+    setFormError(e.message || "發生錯誤");
   } finally {
     setSubmitting(false);
   }
 }
 
 // ---------- 工作卡片 ----------
-
-function makeButton(label, onClick) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = label;
-  btn.addEventListener("click", onClick);
-  return btn;
-}
+// 本票只求新 job dict 能正常顯示（檔名、step_name、percent、state）；完整卡片設計在 #11。
 
 function cardActionError(card, message) {
-  let el = card.querySelector(".card-action-error");
-  if (!el) {
-    el = document.createElement("div");
-    el.className = "card-message card-action-error";
-    card.append(el);
+  let box = card.querySelector(".card-action-error");
+  if (!box) {
+    box = el("div", "err card-action-error");
+    card.append(box);
   }
-  el.textContent = message;
+  box.replaceChildren(icon("alert"), document.createTextNode(message));
+}
+
+function statusText(job) {
+  if (job.state === "queued") return job.queue_position ? `#${job.queue_position}` : "排隊中";
+  if (job.state === "done") return fmtDuration(job.elapsed_seconds) || "完成";
+  if (job.step_total) return `${job.step}/${job.step_total} · ${job.step_name || ""}`.trim();
+  return job.step_name || (job.state === "failed" ? "失敗" : "處理中");
 }
 
 function buildCardBody(job, card) {
   const parts = [];
 
-  const head = document.createElement("div");
-  head.className = "card-head";
-  const icon = document.createElement("span");
-  icon.className = "card-icon";
-  icon.textContent = STATE_ICONS[job.state] || "";
-  const name = document.createElement("span");
-  name.className = "card-name";
+  const name = el("span", "n");
   name.textContent = job.filename || job.display_name || job.url;
-  head.append(icon, name);
-  parts.push(head);
-
-  if (job.state === "queued") {
-    const step = document.createElement("div");
-    step.className = "card-step";
-    step.textContent = "排隊中";
-    parts.push(step);
-  }
+  const st = el("span", "st", icon(STATE_ICONS[job.state] || "info", job.state === "running" ? "spin" : ""));
+  st.append(document.createTextNode(statusText(job)));
+  parts.push(el("div", "jt", name, st));
 
   if (job.state === "running") {
-    const step = document.createElement("div");
-    step.className = "card-step";
-    step.textContent = job.step_total
-      ? `步驟 ${job.step}/${job.step_total} ${job.step_name || ""}`.trim()
-      : job.step_name || "處理中";
-    const bar = document.createElement("progress");
-    bar.max = 100;
-    if (typeof job.percent === "number") bar.value = job.percent;
-    else bar.removeAttribute("value");
-    parts.push(step, bar);
+    const fill = document.createElement("i");
+    const bar = el("div", "bar", fill);
+    const known = typeof job.percent === "number";
+    if (known) fill.style.width = `${Math.max(0, Math.min(100, job.percent))}%`;
+    else bar.classList.add("indet");
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-label", "進度");
+    if (known) bar.setAttribute("aria-valuenow", String(Math.round(job.percent)));
+    const pct = el("div", "pct", el("span", "", document.createTextNode(known ? `${Math.round(job.percent)}%` : "")),
+                   el("span", "", document.createTextNode(fmtDuration(job.elapsed_seconds))));
+    parts.push(bar, pct);
   }
 
   if (job.state === "done") {
-    const row = document.createElement("div");
-    row.className = "row";
-    row.append(makeButton("顯示檔案", async () => {
+    parts.push(el("div", "acts", iconButton("folder", "顯示檔案", async () => {
       try { await postJson(`/api/jobs/${job.id}/reveal`); }
       catch (e) { cardActionError(card, e.message || "發生錯誤"); }
-    }));
-    parts.push(row);
+    }, "sm")));
   }
 
   if (job.state === "failed") {
-    const message = document.createElement("div");
-    message.className = "card-message";
-    message.textContent = job.message || "發生錯誤";
-    parts.push(message);
+    parts.push(el("div", "err", icon("alert"), document.createTextNode(job.message || "發生錯誤")));
+    const acts = el("div", "acts");
     if (job.detail) {
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "查看詳情";
-      const pre = document.createElement("pre");
+      const pre = el("pre", "detail");
       pre.textContent = job.detail;
-      details.append(summary, pre);
-      parts.push(details);
+      pre.hidden = true;
+      const eye = iconButton("eye", "查看詳情", () => {
+        pre.hidden = !pre.hidden;
+        eye.setAttribute("aria-expanded", String(!pre.hidden));
+      }, "sm ghost");
+      eye.setAttribute("aria-expanded", "false");
+      acts.append(eye);
+      parts.push(pre);
     }
-    const row = document.createElement("div");
-    row.className = "row";
-    row.append(makeButton("重試", async (event) => {
+    acts.append(iconButton("retry", "重試", async (event) => {
       event.currentTarget.disabled = true;
       try { renderIfNew(await postJson(`/api/jobs/${job.id}/retry`)); }
       catch (e) { cardActionError(card, e.message || "發生錯誤"); }
-    }));
-    parts.push(row);
+    }, "sm"));
+    parts.push(acts);
   }
 
   return parts;
@@ -545,9 +893,19 @@ function renderJob(job) {
     cards.set(job.id, card);
     jobsEl.prepend(card);
   }
-  card.className = `card ${job.state}`;
+  jobsById.set(job.id, job);
+  card.className = `job ${job.state}`;
+  card.dataset.id = job.id;
+  card.dataset.state = job.state;
   card.replaceChildren(...buildCardBody(job, card));
   $("jobs-empty").hidden = cards.size > 0;
+  updateStats();
+}
+
+function updateStats() {
+  const counts = { queued: 0, running: 0, done: 0, failed: 0 };
+  for (const job of jobsById.values()) if (job.state in counts) counts[job.state] += 1;
+  for (const [state, n] of Object.entries(counts)) $(`stat-${state}`).textContent = String(n);
 }
 
 async function loadJobs() {
@@ -577,6 +935,8 @@ async function loadSettings() {
   try {
     const data = await getJson("/api/settings");
     $("output-dir").textContent = data.output_dir;
+    outputState = applySettings(outputState, data);
+    renderOutputs();
   } catch (e) {
     $("output-dir").textContent = e.message || "發生錯誤";
   }
@@ -617,9 +977,9 @@ async function shutdown() {
 }
 
 function showAdvancedNotice(text) {
-  const el = $("advanced-notice");
-  el.textContent = text;
-  el.hidden = false;
+  const box = $("advanced-notice");
+  box.textContent = text;
+  box.hidden = false;
 }
 
 async function rebuild() {
@@ -650,15 +1010,20 @@ async function uninstall() {
 // ---------- 啟動 ----------
 
 urlsEl.addEventListener("input", onUrlsInput);
+urlsEl.addEventListener("keydown", (event) => {
+  // Ctrl/Cmd + Enter 直接開始
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); startJobs(); }
+});
 $("paste").addEventListener("click", pasteFromClipboard);
 startEl.addEventListener("click", startJobs);
+for (const input of document.querySelectorAll("#input .out input")) input.addEventListener("change", onOutputsChange);
 $("settings-toggle").addEventListener("click", toggleSettings);
 $("pick-folder").addEventListener("click", pickFolder);
 $("shutdown").addEventListener("click", shutdown);
 $("rebuild").addEventListener("click", rebuild);
 $("uninstall").addEventListener("click", uninstall);
 
-refreshForm();
+renderOutputs();
 loadSettings();
 loadJobs();
 connectEvents();
