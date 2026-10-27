@@ -12,7 +12,7 @@ def test_required_ids_present():
     for i in ["urls", "paste", "out-audio", "out-video", "v-original", "v-instrumental", "v-vocals",
               "audio-adv", "audio-summary", "video-summary", "names", "names-row", "start", "start-count",
               "jobs", "jobs-empty", "jobs-done", "done-divider", "clear-done", "version",
-              "settings-toggle", "settings", "settings-close", "output-dir", "pick-folder", "shutdown", "rebuild", "uninstall", "ask"]:
+              "settings-toggle", "settings", "settings-close", "output-dir", "pick-folder", "shutdown", "uninstall", "ask"]:
         assert f'id="{i}"' in HTML, i
 
 def test_header_shows_version_without_stats():
@@ -57,6 +57,37 @@ def test_advanced_notice_spaced_from_buttons():
     # #20 追加：「進階」底下的狀態訊息與按鈕列要分開（8px，與 .row 的 margin-top 同一個間距）
     assert ".settings details .notice { margin-top: 8px; }" in HTML
     assert re.search(r'<details>\s*<summary>進階.*?</summary>\s*<div class="row">.*?</div>\s*<div id="advanced-notice" class="notice" hidden></div>\s*</details>', HTML, re.S)
+
+def test_settings_advanced_has_no_update_button():
+    # #27：設定 → 進階只剩「解除安裝」；showAdvancedNotice 仍給更換資料夾 / 解除安裝用
+    for needle in ('id="rebuild"', "更新 vid-snatch", "function rebuild()", '$("rebuild")'):
+        assert needle not in HTML, needle
+    adv = re.search(r"<details>\s*<summary>進階.*?</details>", HTML, re.S).group(0)
+    assert re.findall(r"<button\b[^>]*>", adv) == ['<button id="uninstall" type="button" class="danger">']
+    assert "function showAdvancedNotice(text)" in HTML
+    assert HTML.count("showAdvancedNotice(") >= 3
+
+def test_update_failed_card_has_update_button_gated_by_can_upgrade():
+    # #27：失敗卡片在 error_kind == update_failed 且 can_upgrade 時多一顆有文字的「更新」鈕，與「重試」並存；
+    # 判斷只看欄位（純函式在 @@card-fns 區塊，node 測），不比對中文訊息
+    assert re.search(r'function isUpdateFailed\(job\)\s*\{\s*return job\.state === "failed" && job\.error_kind === "update_failed";', HTML)
+    assert re.search(r"function showsUpdateButton\(job, canUpgrade\)\s*\{\s*return isUpdateFailed\(job\) && canUpgrade === true;", HTML)
+    assert "canUpgrade = data.can_upgrade === true;" in HTML
+    assert 'document.createTextNode(failureText(job, canUpgrade))' in HTML
+    failed = re.search(r'if \(job\.state === "failed"\) \{(.*?)\n  \}', HTML, re.S).group(1)
+    assert "if (showsUpdateButton(job, canUpgrade)) acts.append(updateButton(job, card));" in failed
+    assert failed.index("updateButton(job, card)") < failed.index("acts.append(retryButton(job, card));")
+    btn = re.search(r"function updateButton\(job, card\)\s*\{(.*?)\n\}", HTML, re.S).group(1)
+    assert 'el("button", "txt", document.createTextNode("更新"))' in btn
+    # 有其他排隊中 / 進行中的工作先 ask() 確認，取消就不送；送出後卡片顯示更新中
+    assert "if (hasActiveJobs([...cards.values()].map((c) => c.dataset.state))) {" in btn
+    assert re.search(r'const choice = await ask\("更新會重新啟動 vid-snatch，中斷進行中與排隊中的工作", \[', btn)
+    assert "if (choice === null) return;" in btn
+    assert btn.index("await ask(") < btn.index('await postJson("/api/rebuild");')
+    assert 'cardNotice(card, "更新中，瀏覽器會自動重新開啟");' in btn
+    assert ".acts button.txt { height: 28px;" in HTML
+    # 先讀設定（can_upgrade）再載入工作與 SSE
+    assert re.search(r"loadSettings\(\)\.then\(\(\) => \{\s*loadJobs\(\);\s*connectEvents\(\);\s*\}\);", HTML)
 
 def test_no_native_dialogs_and_no_external_scripts():
     assert not re.search(r"\b(alert|confirm|prompt)\(", HTML)

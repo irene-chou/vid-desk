@@ -1,7 +1,7 @@
 """yt-dlp 錯誤訊息的中文對照。"""
 import re
 
-KINDS = ("private", "age", "unavailable", "live", "extractor_outdated", "network", "unknown")
+KINDS = ("private", "age", "unavailable", "live", "extractor_outdated", "update_failed", "network", "unknown")
 
 
 class VidSnatchError(Exception):

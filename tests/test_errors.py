@@ -25,3 +25,9 @@ def test_translate_passthrough():
 
 def test_bot_check_is_unknown():
     assert translate(RuntimeError("Sign in to confirm you're not a bot")).kind == "unknown"
+
+def test_kinds_include_update_failed():
+    # #27：自動更新 yt-dlp 後仍失敗的工作用這個 kind；translate 不會產生它（只由 jobs 的重試流程丟出）
+    from vid_snatch.errors import KINDS
+    assert "update_failed" in KINDS
+    assert all(translate(RuntimeError(raw)).kind != "update_failed" for raw in ("HTTP Error 403", "x"))

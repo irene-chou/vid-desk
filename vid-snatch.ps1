@@ -370,6 +370,8 @@ function Start-Server {
     $env:VS_HOST_OUTPUT_DIR = $OutputDir
     $env:VS_CONFIG_DIR = $ConfigDir
     $env:VS_BIND = '127.0.0.1'
+    # 告知後端這裡能升級元件（按失敗卡片的「更新」→ /api/rebuild → 結束碼 10 → 啟動器以 -Upgrade 重裝）；Docker 不設
+    $env:VS_CAN_UPGRADE = '1'
     # 輸出被導向記錄檔時 Python 預設用 cp1252 等系統編碼，改成 UTF-8 中文才不會變亂碼
     $env:PYTHONUTF8 = '1'
     # 去人聲模型已預載，執行時只讀 Hugging Face 快取、不連網

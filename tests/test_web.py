@@ -93,7 +93,7 @@ def test_settings_write(env):
 
 def test_settings_defaults(env):
     c, *_ = env
-    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
+    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "can_upgrade": False,
                                              "demucs_model": "htdemucs_ft", "video_max_height": None,
                                              "version": __version__}
 
@@ -104,11 +104,37 @@ def test_settings_reports_package_version(env):
     r = c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()
     assert r["version"] == __version__
 
+def test_settings_can_upgrade_follows_create_app_flag(tmp_path):
+    # #27：能否升級元件由 create_app 的 can_upgrade 決定（webserver 從 VS_CAN_UPGRADE 讀）；預設 False
+    out = tmp_path / "out"; out.mkdir()
+    q = JobQueue(out, backend=FakeBackend())
+    app = create_app(out, tmp_path / "cfg", str(out), q, HostActionQueue(started_at=0.0), on_shutdown=lambda: None,
+                     can_upgrade=True)
+    c = TestClient(app, base_url="http://localhost")
+    assert c.get("/api/settings").json()["can_upgrade"] is True
+    assert c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()["can_upgrade"] is True
+
+def test_can_upgrade_from_env():
+    from vid_snatch.webserver import can_upgrade_from_env
+    assert can_upgrade_from_env({"VS_CAN_UPGRADE": "1"}) is True
+    assert can_upgrade_from_env({"VS_CAN_UPGRADE": "0"}) is False
+    assert can_upgrade_from_env({}) is False
+
+def test_update_failed_job_exposes_error_kind(env):
+    c, q, *_ = env
+    q.backend.title_failures = 2
+    c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3}, headers=H)
+    run_until_idle(q)
+    job = c.get("/api/jobs").json()["jobs"][0]
+    assert job["state"] == "failed" and job["error_kind"] == "update_failed"
+    assert job["message"] == "下載工具更新後仍無法下載"
+
 def test_settings_details_partial_update_without_restart(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
     assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
-                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__, "restart_required": False}
+                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__, "can_upgrade": False,
+                 "restart_required": False}
     r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
     assert r["audio_format"] == "flac" and r["demucs_model"] == "htdemucs" and r["video_max_height"] is None
     assert c.get("/api/settings").json()["video_max_height"] is None
