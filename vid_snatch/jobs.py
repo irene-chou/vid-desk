@@ -10,7 +10,8 @@ from . import core, errors, outputs
 from .errors import VidSnatchError
 from .outputs import Backend, Hooks, Output, OutputOptions
 
-JOB_STATES = ("queued", "running", "done", "failed")
+JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
+CANCEL_ONLY_QUEUED_MESSAGE = "只能取消排隊中的工作"
 
 _STOP = object()
 
@@ -128,6 +129,18 @@ class JobQueue:
             raise KeyError(job_id)
         return self.add(old.url, old.options, old.filename, old.overwrite)
 
+    def cancel(self, job_id: str) -> Job:
+        """取消排隊中的工作；非排隊狀態丟 ValueError。worker 取到已取消的工作會直接跳過。"""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.state != "queued":
+                raise ValueError(CANCEL_ONLY_QUEUED_MESSAGE)
+            # state 變了，_update 會重排其他排隊工作的順位並推送
+            self._update(job, state="cancelled", finished_at=time.time())
+            return job
+
     def subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue()
         with self._lock:
@@ -232,7 +245,7 @@ class JobQueue:
             if job_id is _STOP:
                 continue
             job = self.get(job_id)
-            if job is None:
+            if job is None or not self._claim(job):
                 continue
             try:
                 self._run(job)
@@ -245,9 +258,19 @@ class JobQueue:
                     self._update(job, state="failed", finished_at=time.time(), eta_seconds=None,
                                  message=err.message, detail=err.detail, error_kind=err.kind)
 
-    def _run(self, job: Job) -> None:
+    def _claim(self, job: Job) -> bool:
+        """把排隊中的工作標成執行中（已取消的回 False）；順位重排在同一把鎖內完成，之後不能再取消。"""
         with self._lock:
+            if job.state != "queued":
+                return False
+            job.state = "running"
             job.started_at = time.time()  # 隨第 1 步的事件一起送出
+            for other in self._renumber():
+                if other is not job:
+                    self._emit(other)
+            return True
+
+    def _run(self, job: Job) -> None:
         try:
             self._attempt(job)
         except VidSnatchError as e:

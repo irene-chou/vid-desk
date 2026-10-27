@@ -133,22 +133,25 @@
   /* ===== 排隊 ===== */
   .q { display: grid; gap: 10px; align-content: start; min-width: 0; }
   .qh { display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
-  #jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  #jobs, #jobs-done { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  #jobs:empty, #jobs-done:empty { display: none; }
   .job { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 12px 14px; display: grid; gap: 8px; border-left-width: 3px; min-width: 0; }
   .job.running { border-left-color: var(--accent); }
   .job.done { border-left-color: var(--ok); }
   .job.failed { border-left-color: var(--bad); }
-  .job.queued { border-left-color: var(--line); }
+  .job.queued, .job.cancelled { border-left-color: var(--line); }
   .jt { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
   .jt .n { font-weight: 600; font-size: 0.92rem; min-width: 0; overflow-wrap: anywhere; }
   .st { font-family: var(--mono); font-size: 0.72rem; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
-  .running .st { color: var(--accent); } .done .st { color: var(--ok); } .failed .st { color: var(--bad); } .queued .st { color: var(--muted); }
+  .running .st { color: var(--accent); } .done .st { color: var(--ok); } .failed .st { color: var(--bad); } .queued .st, .cancelled .st { color: var(--muted); }
   .kv { display: grid; grid-template-columns: 18px 1fr; gap: 3px 8px; font-size: 0.76rem; font-family: var(--mono); color: var(--muted); align-items: center; }
   .kv .ic { color: var(--muted); }
   .kv b { font-weight: 400; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kv a { color: var(--accent); text-decoration: none; }
+  .kv a:hover { text-decoration: underline; }
   .outs { display: flex; gap: 6px; flex-wrap: wrap; }
-  .o { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; font-family: var(--mono); }
+  .o { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; font-family: var(--mono); max-width: 100%; }
+  .o > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .o.did { border-color: color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok); }
   .o.now { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .o.bad { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); }
@@ -321,8 +324,10 @@
 
   <section class="q" id="queue" aria-label="排隊">
     <div class="qh"><span class="lbl">進行中與排隊</span></div>
-    <ul id="jobs"></ul>
+    <ul id="jobs" aria-label="進行中與排隊"></ul>
     <div id="jobs-empty" class="empty">還沒有下載工作</div>
+    <div class="divider" id="done-divider" hidden>已完成 <button id="clear-done" class="ibtn sm ghost" type="button" aria-label="清除已完成" title="清除已完成"><svg class="ic"><use href="#i-trash"/></svg></button></div>
+    <ul id="jobs-done" aria-label="已完成"></ul>
   </section>
 </div>
 
@@ -419,14 +424,81 @@ function applySettings(state, settings) {
 }
 // @@outputs-state-end
 
+// ===== 排隊卡片的純函式（tests/queue_cards.test.mjs 以 node 直接測這一段；需先載入上面的輸出選項區塊） =====
+// @@card-fns-begin
+const KIND_ICONS = { original: "disc", instrumental: "mic-off", vocals: "mic", video: "film" };
+const STATE_ICONS = { queued: "clock", running: "loader", done: "checkc", failed: "xc", cancelled: "x" };
+const OUTPUT_STATE_ICONS = { queued: "clock", running: "loader", done: "check", failed: "x" };
+const OUTPUT_PILL_CLASS = { done: "did", running: "now", failed: "bad" };
+const FINISHED_STATES = ["done", "failed", "cancelled"];
+
+function fmtDuration(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "";
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  return m >= 60
+    ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
+    : `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function fmtSize(bytes) {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i += 1; }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
+}
+
+// 膠囊文字：原曲.mp3 · 192k、伴奏.flac、.mp4 · 1080p；細項摘要由 job.options 組出
+function outputLabel(output, options) {
+  if (output.kind === "video") {
+    const h = options && options.video ? options.video.max_height : null;
+    return `.${output.ext}${h ? ` · ${h}p` : ""}`;
+  }
+  const audio = options && options.audio;
+  const lossy = !LOSSLESS.includes(output.ext);
+  const br = audio && lossy && audio.bitrate ? ` · ${audio.bitrate}k` : "";
+  return `${VERSION_LABELS[output.kind] || output.kind}.${output.ext}${br}`;
+}
+
+// 標題列右側的狀態文字
+function statusText(job) {
+  if (job.state === "queued") return job.queue_position ? `#${job.queue_position}` : "排隊中";
+  if (job.state === "cancelled") return "已取消";
+  if (job.state === "done") return fmtDuration(job.elapsed_seconds) || "完成";
+  if (job.step_total) return `${job.step}/${job.step_total} · ${job.step_name || ""}`.trim();
+  return job.step_name || (job.state === "failed" ? "失敗" : "處理中");
+}
+
+// 計時基準：記下「收到這則 job 時」的 elapsed_seconds / eta_seconds 與本機時刻，
+// 之後每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 started_at，避免時鐘差。
+function timingBase(job, nowMs) {
+  return {
+    at: nowMs,
+    elapsed: typeof job.elapsed_seconds === "number" ? job.elapsed_seconds : 0,
+    eta: typeof job.eta_seconds === "number" ? job.eta_seconds : null,
+  };
+}
+
+// `已耗時 / ~預估總時`；預估總時 = 收到時的已耗時 + eta，之後不會往下掉（跑過頭就等於已耗時）
+function timingText(base, nowMs) {
+  const elapsed = base.elapsed + Math.max(0, nowMs - base.at) / 1000;
+  if (base.eta === null) return fmtDuration(elapsed);
+  const total = Math.max(elapsed, base.elapsed + base.eta);
+  return `${fmtDuration(elapsed)} / ~${fmtDuration(total)}`;
+}
+// @@card-fns-end
+
 const URL_RE = /youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/|music\.youtube\.com\/watch\?/;
-const STATE_ICONS = { queued: "clock", running: "loader", done: "checkc", failed: "xc" };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const $ = (id) => document.getElementById(id);
 const urlsEl = $("urls");
 const startEl = $("start");
 const jobsEl = $("jobs");
+const doneEl = $("jobs-done");
 
 let outputState = defaultOutputState();
 
@@ -440,6 +512,10 @@ let shownUrls = [];
 let submitting = false;
 const cards = new Map();   // job.id -> <li class="job">
 const jobsById = new Map(); // job.id -> 最新 job dict（頂部統計用）
+const clearedIds = new Set();   // 「清除已完成」隱藏掉的工作；SSE 重連重播時不再畫回來
+const expandedDetails = new Set(); // 「查看詳情」展開中的工作，重畫卡片時維持展開
+const timing = new Map();   // 進行中工作 id -> timingBase（前端每秒計時用）
+let timerId = null;
 
 // ---------- 小工具 ----------
 
@@ -473,15 +549,6 @@ function shortUrl(url) {
   return url.replace(/^https?:\/\/(www\.)?/, "");
 }
 
-function fmtDuration(seconds) {
-  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "";
-  const s = Math.max(0, Math.round(seconds));
-  const m = Math.floor(s / 60);
-  return m >= 60
-    ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
-    : `${m}:${String(s % 60).padStart(2, "0")}`;
-}
-
 // ---------- HTTP ----------
 
 async function readError(res) {
@@ -504,11 +571,12 @@ async function getJson(path) {
   return res.json();
 }
 
-async function postJson(path, body) {
+// POST / DELETE 都要帶 X-Vid-Snatch 防 CSRF
+async function sendJson(method, path, body) {
   let res;
   try {
     res = await fetch(path, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json", "X-Vid-Snatch": "1" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -517,6 +585,14 @@ async function postJson(path, body) {
   }
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
+}
+
+function postJson(path, body) {
+  return sendJson("POST", path, body);
+}
+
+function deleteJson(path) {
+  return sendJson("DELETE", path);
 }
 
 // ---------- 頁內對話框 ----------
@@ -807,7 +883,8 @@ async function startJobs() {
 }
 
 // ---------- 工作卡片 ----------
-// 本票只求新 job dict 能正常顯示（檔名、step_name、percent、state）；完整卡片設計在 #11。
+// 卡片結構照 docs/design/console-mockup.html；資料欄位見 docs/superpowers/specs/2026-10-27-console-ui-design.md。
+// 每則 SSE 都整張重畫（replaceChildren），展開中的「查看詳情」以 expandedDetails 記住。
 
 function cardActionError(card, message) {
   let box = card.querySelector(".card-action-error");
@@ -818,11 +895,81 @@ function cardActionError(card, message) {
   box.replaceChildren(icon("alert"), document.createTextNode(message));
 }
 
-function statusText(job) {
-  if (job.state === "queued") return job.queue_position ? `#${job.queue_position}` : "排隊中";
-  if (job.state === "done") return fmtDuration(job.elapsed_seconds) || "完成";
-  if (job.step_total) return `${job.step}/${job.step_total} · ${job.step_name || ""}`.trim();
-  return job.step_name || (job.state === "failed" ? "失敗" : "處理中");
+function isFinished(state) {
+  return FINISHED_STATES.includes(state);
+}
+
+function listFor(state) {
+  return isFinished(state) ? doneEl : jobsEl;
+}
+
+// 細節列：來源網址（開新分頁）、原標題、已存檔名與大小
+function buildDetails(job) {
+  const kv = el("div", "kv");
+  const link = document.createElement("a");
+  link.href = job.url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = shortUrl(job.url);
+  link.title = job.url;
+  kv.append(icon("link"), el("b", "", link));
+  if (job.title) {
+    const title = el("b", "");
+    title.textContent = job.title;
+    title.title = job.title;
+    kv.append(icon("title"), title);
+  }
+  for (const output of job.outputs || []) {
+    if (output.state !== "done" || !output.filename) continue;
+    const size = fmtSize(output.size_bytes);
+    const file = el("b", "");
+    file.textContent = size ? `${output.filename} · ${size}` : output.filename;
+    file.title = output.result_path || output.filename;
+    kv.append(icon("file"), file);
+  }
+  return kv;
+}
+
+// 輸出列：每個輸出檔一顆膠囊，含類型圖示、尾綴與細項摘要、自己的狀態圖示
+function buildOutputs(job) {
+  const outs = el("div", "outs");
+  const showState = job.state !== "queued" && job.state !== "cancelled";
+  for (const output of job.outputs || []) {
+    const pill = el("span", OUTPUT_PILL_CLASS[output.state] ? `o ${OUTPUT_PILL_CLASS[output.state]}` : "o");
+    const label = el("span", "");
+    label.textContent = outputLabel(output, job.options);
+    pill.append(icon(KIND_ICONS[output.kind] || "file"), label);
+    if (showState && OUTPUT_STATE_ICONS[output.state]) {
+      pill.append(icon(OUTPUT_STATE_ICONS[output.state], output.state === "running" ? "spin" : ""));
+    }
+    if (output.filename) pill.title = output.filename;
+    outs.append(pill);
+  }
+  return outs;
+}
+
+function buildProgress(job) {
+  const fill = document.createElement("i");
+  const bar = el("div", "bar", fill);
+  const known = typeof job.percent === "number";
+  if (known) fill.style.width = `${Math.max(0, Math.min(100, job.percent))}%`;
+  else bar.classList.add("indet");
+  bar.setAttribute("role", "progressbar");
+  bar.setAttribute("aria-label", "進度");
+  if (known) bar.setAttribute("aria-valuenow", String(Math.round(job.percent)));
+  const time = el("span", "time");
+  time.textContent = timingText(timing.get(job.id), performance.now());
+  const pct = el("div", "pct", el("span", "", document.createTextNode(known ? `${Math.round(job.percent)}%` : "")), time);
+  return [bar, pct];
+}
+
+function retryButton(job, card) {
+  return iconButton("retry", "重試", async (event) => {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    try { renderIfNew(await postJson(`/api/jobs/${job.id}/retry`)); }
+    catch (e) { btn.disabled = false; cardActionError(card, e.message || "發生錯誤"); }
+  }, "sm");
 }
 
 function buildCardBody(job, card) {
@@ -832,20 +979,18 @@ function buildCardBody(job, card) {
   name.textContent = job.filename || job.display_name || job.url;
   const st = el("span", "st", icon(STATE_ICONS[job.state] || "info", job.state === "running" ? "spin" : ""));
   st.append(document.createTextNode(statusText(job)));
-  parts.push(el("div", "jt", name, st));
+  parts.push(el("div", "jt", name, st), buildDetails(job));
+  if (job.outputs && job.outputs.length) parts.push(buildOutputs(job));
 
-  if (job.state === "running") {
-    const fill = document.createElement("i");
-    const bar = el("div", "bar", fill);
-    const known = typeof job.percent === "number";
-    if (known) fill.style.width = `${Math.max(0, Math.min(100, job.percent))}%`;
-    else bar.classList.add("indet");
-    bar.setAttribute("role", "progressbar");
-    bar.setAttribute("aria-label", "進度");
-    if (known) bar.setAttribute("aria-valuenow", String(Math.round(job.percent)));
-    const pct = el("div", "pct", el("span", "", document.createTextNode(known ? `${Math.round(job.percent)}%` : "")),
-                   el("span", "", document.createTextNode(fmtDuration(job.elapsed_seconds))));
-    parts.push(bar, pct);
+  if (job.state === "running") parts.push(...buildProgress(job));
+
+  if (job.state === "queued") {
+    parts.push(el("div", "acts", iconButton("x", "取消", async (event) => {
+      const btn = event.currentTarget;
+      btn.disabled = true;
+      try { renderJob(await deleteJson(`/api/jobs/${job.id}`)); }
+      catch (e) { btn.disabled = false; cardActionError(card, e.message || "發生錯誤"); }
+    }, "sm ghost")));
   }
 
   if (job.state === "done") {
@@ -855,26 +1000,27 @@ function buildCardBody(job, card) {
     }, "sm")));
   }
 
+  if (job.state === "cancelled") {
+    parts.push(el("div", "acts", retryButton(job, card)));
+  }
+
   if (job.state === "failed") {
     parts.push(el("div", "err", icon("alert"), document.createTextNode(job.message || "發生錯誤")));
     const acts = el("div", "acts");
     if (job.detail) {
       const pre = el("pre", "detail");
       pre.textContent = job.detail;
-      pre.hidden = true;
+      pre.hidden = !expandedDetails.has(job.id);
       const eye = iconButton("eye", "查看詳情", () => {
         pre.hidden = !pre.hidden;
+        if (pre.hidden) expandedDetails.delete(job.id); else expandedDetails.add(job.id);
         eye.setAttribute("aria-expanded", String(!pre.hidden));
       }, "sm ghost");
-      eye.setAttribute("aria-expanded", "false");
+      eye.setAttribute("aria-expanded", String(!pre.hidden));
       acts.append(eye);
       parts.push(pre);
     }
-    acts.append(iconButton("retry", "重試", async (event) => {
-      event.currentTarget.disabled = true;
-      try { renderIfNew(await postJson(`/api/jobs/${job.id}/retry`)); }
-      catch (e) { cardActionError(card, e.message || "發生錯誤"); }
-    }, "sm"));
+    acts.append(retryButton(job, card));
     parts.push(acts);
   }
 
@@ -887,25 +1033,68 @@ function renderIfNew(job) {
 }
 
 function renderJob(job) {
+  if (clearedIds.has(job.id)) return; // 使用者已清掉的完成卡片（SSE 重連會重播）
   let card = cards.get(job.id);
   if (!card) {
     card = document.createElement("li");
     cards.set(job.id, card);
-    jobsEl.prepend(card);
   }
+  // 狀態變成完成 / 失敗 / 取消時搬到「已完成」區；新卡片一律放最上面（新到舊）
+  const list = listFor(job.state);
+  if (card.parentNode !== list) list.prepend(card);
   jobsById.set(job.id, job);
+  if (job.state === "running") timing.set(job.id, timingBase(job, performance.now()));
+  else timing.delete(job.id);
+  if (job.state !== "failed") expandedDetails.delete(job.id);
   card.className = `job ${job.state}`;
   card.dataset.id = job.id;
   card.dataset.state = job.state;
   card.replaceChildren(...buildCardBody(job, card));
-  $("jobs-empty").hidden = cards.size > 0;
+  refreshQueueChrome();
   updateStats();
+  syncTimer();
+}
+
+// 空狀態、「已完成」分隔線的顯示
+function refreshQueueChrome() {
+  const empty = $("jobs-empty");
+  empty.hidden = jobsEl.childElementCount > 0;
+  empty.textContent = cards.size > 0 ? "沒有進行中的工作" : "還沒有下載工作";
+  $("done-divider").hidden = doneEl.childElementCount === 0;
 }
 
 function updateStats() {
   const counts = { queued: 0, running: 0, done: 0, failed: 0 };
   for (const job of jobsById.values()) if (job.state in counts) counts[job.state] += 1;
   for (const [state, n] of Object.entries(counts)) $(`stat-${state}`).textContent = String(n);
+}
+
+// 「已耗時 / 預估總時」每秒由前端更新；沒有進行中的卡片就停掉計時器
+function tickTimers() {
+  const now = performance.now();
+  for (const [id, base] of timing) {
+    const span = cards.get(id)?.querySelector(".pct .time");
+    if (span) span.textContent = timingText(base, now);
+  }
+}
+
+function syncTimer() {
+  if (timing.size > 0 && timerId === null) timerId = setInterval(tickTimers, 1000);
+  else if (timing.size === 0 && timerId !== null) { clearInterval(timerId); timerId = null; }
+}
+
+// 「清除已完成」只在前端隱藏；後端仍保留工作
+function clearDone() {
+  for (const card of [...doneEl.children]) {
+    const id = card.dataset.id;
+    clearedIds.add(id);
+    cards.delete(id);
+    jobsById.delete(id);
+    expandedDetails.delete(id);
+    card.remove();
+  }
+  refreshQueueChrome();
+  updateStats();
 }
 
 async function loadJobs() {
@@ -1022,6 +1211,7 @@ $("pick-folder").addEventListener("click", pickFolder);
 $("shutdown").addEventListener("click", shutdown);
 $("rebuild").addEventListener("click", rebuild);
 $("uninstall").addEventListener("click", uninstall);
+$("clear-done").addEventListener("click", clearDone);
 
 renderOutputs();
 loadSettings();

@@ -47,7 +47,7 @@ class FakeBackend:
 def run_until_idle(q, timeout=5):
     deadline = threading.Event()
     for _ in range(int(timeout * 20)):
-        if all(j.state in ("done", "failed") for j in q.list()): return
+        if all(j.state in ("done", "failed", "cancelled") for j in q.list()): return
         deadline.wait(0.05)
     raise AssertionError("queue did not drain")
 
@@ -286,3 +286,56 @@ def test_add_rejects_invalid_options(q):
         q.add("https://youtu.be/a", {"audio": {"versions": []}})
     with pytest.raises(ValueError):
         q.add("https://youtu.be/a", "flac")
+
+
+# ---- 取消 ----
+
+def test_cancel_queued_job_renumbers_and_worker_skips_it(tmp_path):
+    gate = threading.Event()
+
+    class Slow(FakeBackend):
+        def download_audio(self, *a, **k):
+            gate.wait(5)
+            return super().download_audio(*a, **k)
+
+    q = JobQueue(tmp_path, backend=Slow()); events = q.subscribe()
+    a = q.add("https://youtu.be/a", "mp3", filename="a")
+    b = q.add("https://youtu.be/b", "mp3", filename="b")
+    c = q.add("https://youtu.be/c", "mp3", filename="c")
+    q.start()
+    for _ in range(100):
+        if a.state == "running": break
+        threading.Event().wait(0.02)
+    drain(events)
+    cancelled = q.cancel(b.id)
+    assert cancelled is b and b.state == "cancelled" and b.queue_position is None
+    assert b.finished_at is not None and b.started_at is None and b.to_dict()["elapsed_seconds"] is None
+    assert c.queue_position == 1  # 後面的工作往前補
+    seen = drain(events)
+    assert any(e["id"] == b.id and e["state"] == "cancelled" for e in seen)
+    assert any(e["id"] == c.id and e["queue_position"] == 1 for e in seen)
+    # 執行中的不能取消；取消過的也不能再取消
+    with pytest.raises(ValueError, match="只能取消排隊中的工作"):
+        q.cancel(a.id)
+    with pytest.raises(ValueError):
+        q.cancel(b.id)
+    with pytest.raises(KeyError):
+        q.cancel("nope")
+    gate.set(); run_until_idle(q); q.stop()
+    assert (a.state, b.state, c.state) == ("done", "cancelled", "done")
+    assert [x[0] for x in q.backend.calls].count("download_audio") == 2  # b 沒有被跑
+
+def test_cancel_before_worker_starts_is_never_run(tmp_path):
+    q = JobQueue(tmp_path, backend=FakeBackend())
+    job = q.add("https://youtu.be/a", "mp3", filename="a")
+    q.cancel(job.id)
+    q.start(); run_until_idle(q); q.stop()
+    assert job.state == "cancelled" and q.backend.calls == []
+    assert [o.state for o in job.outputs] == ["queued"]
+
+def test_retry_cancelled_job_creates_new_queued_job(q):
+    q.stop()
+    job = q.add("https://youtu.be/a", "mp3", filename="a")
+    q.cancel(job.id)
+    again = q.retry(job.id)
+    assert again.id != job.id and again.state == "queued" and again.queue_position == 1
