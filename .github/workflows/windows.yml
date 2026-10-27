@@ -68,6 +68,9 @@ jobs:
 
       - name: Smoke test native install
         shell: powershell
+        env:
+          # 啟動器要從 GitHub 下載的版本：PR 用 head commit，也就是推上去的那一版
+          VS_SMOKE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\ci-smoke.ps1
           exit $LASTEXITCODE
