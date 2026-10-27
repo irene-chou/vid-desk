@@ -14,13 +14,35 @@ from . import __version__, config, core
 from .errors import VidSnatchError
 from .hostactions import HostActionQueue
 from .jobs import JobQueue
+from .outputs import OutputOptions
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+
+AudioFormat = Literal["mp3", "m4a", "wav", "flac"]
+Bitrate = Literal[128, 192, 320]
+DemucsModel = Literal["htdemucs", "htdemucs_ft"]
+MaxHeight = Literal[1080, 720]
+
+
+class AudioIn(BaseModel):
+    versions: list[Literal["original", "instrumental", "vocals"]]
+    format: AudioFormat = "mp3"
+    bitrate: Bitrate = 192
+    model: DemucsModel = "htdemucs_ft"
+
+
+class VideoIn(BaseModel):
+    max_height: MaxHeight | None = None
+
+
+class OutputsIn(BaseModel):
+    audio: AudioIn | None = None
+    video: VideoIn | None = None
 
 
 class JobsIn(BaseModel):
     urls: list[str]
-    mode: Literal["mp3", "no_vocals", "mp4"]
+    outputs: OutputsIn
     filename: str | None = None
     overwrite: bool = False
     filenames: list[str | None] | None = None
@@ -28,7 +50,12 @@ class JobsIn(BaseModel):
 
 
 class SettingsIn(BaseModel):
-    output_dir: str
+    """沒給的欄位維持原值；video_max_height 給 null 表示不限畫質。"""
+    output_dir: str | None = None
+    audio_format: AudioFormat | None = None
+    audio_bitrate: Bitrate | None = None
+    demucs_model: DemucsModel | None = None
+    video_max_height: MaxHeight | None = None
 
 
 class UninstallIn(BaseModel):
@@ -92,12 +119,27 @@ def create_app(
         return {"title": title}
 
     @app.get("/api/exists")
-    def exists(filename: str, mode: str):
-        found, suggestion = queue.exists(filename, mode)
-        return {"exists": found, "suggestion": suggestion}
+    def exists(filename: str, versions: str = "", format: str = "mp3", video: bool = False):
+        """versions 以逗號分隔（original,instrumental,vocals）；不勾音檔就留空。"""
+        spec: dict = {}
+        if versions.strip():
+            spec["audio"] = {"versions": [v.strip() for v in versions.split(",") if v.strip()], "format": format}
+        if video:
+            spec["video"] = {}
+        try:
+            options = OutputOptions.from_dict(spec)
+        except ValueError as e:
+            return _error(400, str(e))
+        found, suggestion = queue.exists(filename, options)
+        return {"exists": found, "suggestion": suggestion,
+                "files": [options.filename(suggestion, o.kind) for o in options.outputs()]}
 
     @app.post("/api/jobs")
     def create_jobs(body: JobsIn):
+        try:
+            options = OutputOptions.from_dict(body.outputs.model_dump())
+        except ValueError as e:
+            return _error(400, str(e))
         urls = []
         for i, raw in enumerate(body.urls, start=1):
             cleaned = core.clean_url(raw)
@@ -111,7 +153,7 @@ def create_app(
             return _error(400, "檔名數量和網址數量不一致")
         filenames = body.filenames or ([body.filename] if n == 1 else [None] * n)
         overwrites = body.overwrites or [body.overwrite] * n
-        jobs = [queue.add(u, body.mode, (f or "").strip() or None, o)
+        jobs = [queue.add(u, options, (f or "").strip() or None, o)
                 for u, f, o in zip(urls, filenames, overwrites)]
         return {"jobs": [j.to_dict() for j in jobs]}
 
@@ -156,16 +198,25 @@ def create_app(
 
         return EventSourceResponse(stream(), ping=15)
 
+    def _settings(output_dir: str) -> dict:
+        return {"output_dir": output_dir, **config.read_settings(config_dir)}
+
     @app.get("/api/settings")
     def get_settings():
-        return {"output_dir": host_output_dir}
+        return _settings(host_output_dir)
 
     @app.post("/api/settings")
     def set_settings(body: SettingsIn):
-        if not body.output_dir.strip():
-            return _error(400, "請輸入下載資料夾")
-        config.write_output_dir(config_dir, body.output_dir)
-        return {"output_dir": body.output_dir, "restart_required": True}
+        given = body.model_fields_set
+        restart = False
+        if "output_dir" in given:
+            if not (body.output_dir or "").strip():
+                return _error(400, "請輸入下載資料夾")
+            config.write_output_dir(config_dir, body.output_dir)
+            restart = True
+        details = {k: getattr(body, k) for k in config.DEFAULT_SETTINGS if k in given}
+        config.write_settings(config_dir, details)
+        return {**_settings(body.output_dir if restart else host_output_dir), "restart_required": restart}
 
     @app.post("/api/settings/pick-folder")
     async def pick_folder():

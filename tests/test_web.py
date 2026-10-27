@@ -6,6 +6,9 @@ from vid_snatch.hostactions import HostActionQueue
 from tests.test_jobs import FakeBackend, run_until_idle
 
 H = {"X-Vid-Snatch": "1"}
+MP3 = {"audio": {"versions": ["original"]}}
+ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "bitrate": 320, "model": "htdemucs"},
+       "video": {"max_height": 1080}}
 
 @pytest.fixture
 def env(tmp_path):
@@ -27,7 +30,7 @@ def test_index_is_not_cached(env):
 
 def test_post_without_header_is_403(env):
     c, *_ = env
-    assert c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "mode": "mp3"}).status_code == 403
+    assert c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3}).status_code == 403
 
 def test_info_invalid_url(env):
     c, *_ = env
@@ -36,7 +39,7 @@ def test_info_invalid_url(env):
 
 def test_create_jobs_and_list_reflects_progress(env):
     c, q, *_ = env
-    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", " https://youtu.be/b?si=1 "], "mode": "mp3", "filename": "ignored"}, headers=H)
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", " https://youtu.be/b?si=1 "], "outputs": MP3, "filename": "ignored"}, headers=H)
     assert r.status_code == 200 and len(r.json()["jobs"]) == 2
     run_until_idle(q)
     jobs = c.get("/api/jobs").json()["jobs"]
@@ -45,7 +48,7 @@ def test_create_jobs_and_list_reflects_progress(env):
 
 def test_create_jobs_with_per_url_filenames(env):
     c, q, *_ = env
-    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b", "https://youtu.be/c"], "mode": "mp3",
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b", "https://youtu.be/c"], "outputs": MP3,
                                   "filenames": ["first", "", "third"], "overwrites": [False, False, True]}, headers=H)
     jobs = r.json()["jobs"]
     assert [j["filename"] for j in jobs] == ["first", None, "third"]
@@ -53,17 +56,17 @@ def test_create_jobs_with_per_url_filenames(env):
 
 def test_create_jobs_rejects_mismatched_filenames(env):
     c, q, *_ = env
-    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b"], "mode": "mp3", "filenames": ["x"]}, headers=H)
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "https://youtu.be/b"], "outputs": MP3, "filenames": ["x"]}, headers=H)
     assert r.status_code == 400 and q.list() == []
 
 def test_create_jobs_rejects_any_invalid_url(env):
     c, q, *_ = env
-    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "nope"], "mode": "mp3"}, headers=H)
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a", "nope"], "outputs": MP3}, headers=H)
     assert r.status_code == 400 and q.list() == []
 
 def test_reveal_pushes_host_path(env):
     c, q, h, *_ = env
-    job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "mode": "mp3", "filename": "song"}, headers=H).json()["jobs"][0]
+    job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3, "filename": "song"}, headers=H).json()["jobs"][0]
     run_until_idle(q)
     assert c.post(f"/api/jobs/{job['id']}/reveal", headers=H).status_code == 200
     assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-snatch/song.mp3"}
@@ -85,6 +88,72 @@ def test_settings_write(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"output_dir": "/new/dir"}, headers=H).json()
     assert r["restart_required"] is True and (cfg / "config").read_text(encoding="utf-8") == "output_dir=/new/dir\n"
+    assert r["output_dir"] == "/new/dir" and r["audio_format"] == "mp3"
+
+def test_settings_defaults(env):
+    c, *_ = env
+    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
+                                             "audio_bitrate": 192, "demucs_model": "htdemucs_ft", "video_max_height": None}
+
+def test_settings_details_partial_update_without_restart(env):
+    c, q, h, cfg, _ = env
+    r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
+    assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac", "audio_bitrate": 192,
+                 "demucs_model": "htdemucs_ft", "video_max_height": 720, "restart_required": False}
+    r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
+    assert r["audio_format"] == "flac" and r["demucs_model"] == "htdemucs" and r["video_max_height"] is None
+    assert c.get("/api/settings").json()["video_max_height"] is None
+    assert "output_dir=" not in (cfg / "config").read_text(encoding="utf-8")
+    assert c.post("/api/settings", json={"audio_bitrate": 256}, headers=H).status_code == 422
+    assert c.post("/api/settings", json={"output_dir": "  "}, headers=H).status_code == 400
+
+def test_create_jobs_with_full_outputs(env):
+    c, q, *_ = env
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": ALL, "filename": "song"}, headers=H)
+    assert r.status_code == 200
+    job = r.json()["jobs"][0]
+    assert job["options"] == ALL
+    assert [o["kind"] for o in job["outputs"]] == ["original", "instrumental", "vocals", "video"]
+    assert [o["ext"] for o in job["outputs"]] == ["mp3", "mp3", "mp3", "mp4"]
+    assert job["steps"] == ["取得資訊", "下載", "轉檔", "分離", "下載影片", "合併"]
+    assert job["state"] == "queued" and job["queue_position"] == 1
+    run_until_idle(q)
+    done = c.get("/api/jobs").json()["jobs"][0]
+    assert done["title"] == "Same Title" and done["display_name"] == "song"
+    assert all(o["state"] == "done" and o["size_bytes"] > 0 for o in done["outputs"])
+    assert done["outputs"][1]["filename"] == "song_no_vocals.mp3" and done["outputs"][3]["filename"] == "song.mp4"
+    assert done["elapsed_seconds"] >= 0 and done["finished_at"] >= done["started_at"]
+
+@pytest.mark.parametrize("outputs,status", [
+    ({}, 400), ({"audio": {"versions": []}}, 400), ({"audio": {"versions": ["karaoke"]}}, 422),
+    ({"audio": {"versions": ["original"], "bitrate": 256}}, 422), ({"video": {"max_height": 480}}, 422),
+])
+def test_create_jobs_rejects_bad_outputs(env, outputs, status):
+    c, q, *_ = env
+    r = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": outputs}, headers=H)
+    assert r.status_code == status and q.list() == []
+
+def test_create_jobs_rejects_legacy_mode(env):
+    c, q, *_ = env
+    assert c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "mode": "mp3"}, headers=H).status_code == 422
+
+def test_exists_with_outputs(env, tmp_path):
+    c, q, *_ = env
+    (q.output_dir / "song_vocals.mp3").touch()
+    r = c.get("/api/exists", params={"filename": "song", "versions": "original,vocals"}).json()
+    assert r == {"exists": True, "suggestion": "song (1)", "files": ["song (1).mp3", "song (1)_vocals.mp3"]}
+    r = c.get("/api/exists", params={"filename": "song", "versions": "original", "format": "flac", "video": "true"}).json()
+    assert r == {"exists": False, "suggestion": "song", "files": ["song.flac", "song.mp4"]}
+    r = c.get("/api/exists", params={"filename": "song", "video": "true"}).json()
+    assert r["files"] == ["song.mp4"]
+    assert c.get("/api/exists", params={"filename": "song"}).status_code == 400
+
+def test_reveal_uses_first_done_output(env):
+    c, q, h, *_ = env
+    job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": {"audio": {"versions": ["instrumental"]}, "video": {}}, "filename": "song"}, headers=H).json()["jobs"][0]
+    run_until_idle(q)
+    assert c.post(f"/api/jobs/{job['id']}/reveal", headers=H).status_code == 200
+    assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-snatch/song_no_vocals.mp3"}
 
 def test_shutdown_calls_hook(env):
     c, q, h, cfg, shutdown = env
@@ -93,7 +162,7 @@ def test_shutdown_calls_hook(env):
 
 def test_events_replays_existing_jobs(env):
     c, q, *_ = env
-    c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "mode": "mp3", "filename": "s"}, headers=H)
+    c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3, "filename": "s"}, headers=H)
     run_until_idle(q)
     body = ""
     with c.stream("GET", "/api/events") as r:

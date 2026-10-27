@@ -5,17 +5,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from vid_snatch.core import (
-    DEFAULT_OUTPUT_DIR,
-    download_audio,
-    download_video,
-    fetch_title,
-    remove_vocals,
-    sanitize_filename,
-    unique_path,
-    validate_url,
-)
+from vid_snatch import core, outputs
+from vid_snatch.core import DEFAULT_OUTPUT_DIR, sanitize_filename, validate_url
 from vid_snatch.errors import VidSnatchError
+from vid_snatch.outputs import Hooks, OutputOptions
 
 
 def check_dependencies() -> bool:
@@ -66,33 +59,36 @@ def print_progress(percent: float | None) -> None:
     print("\r...   " if percent is None else f"\r{percent:.0f}%   ", end="", flush=True)
 
 
+def mode_of(args) -> str:
+    return "mp4" if args.video else "no_vocals" if args.no_vocals else "mp3"
+
+
+RESULT_LABELS = {"original": "Audio", "instrumental": "Instrumental", "vocals": "Vocals", "video": "Video"}
+
+
 def run(args) -> None:
     args.output.mkdir(parents=True, exist_ok=True)
+    options = OutputOptions.from_mode(mode_of(args))
+    steps = options.steps()
 
     print("正在取得影片資訊...")
-    title = fetch_title(args.url)
-    filename = prompt_filename(title)
-    ext = "mp4" if args.video else "mp3"
+    title = core.fetch_title(args.url)
     # 避免覆蓋既有檔案：已存在時改用 "name (1)"
-    filename = unique_path(args.output / f"{filename}.{ext}").stem
+    filename = outputs.unique_base(args.output, prompt_filename(title), options)
 
-    if args.video:
-        print(f"\nDownloading video from: {args.url}")
-        video_path = download_video(args.url, args.output, filename, on_progress=print_progress)
-        print(f"\nDone! Video saved: {video_path}")
-    elif args.no_vocals:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(
-            args.url, args.output, filename, audio_format="wav", on_progress=print_progress,
-        )
-        print(f"\nDownloaded: {audio_path}")
-        print("Separating vocals (first run downloads the model, ~320MB)...")
-        result_path = remove_vocals(audio_path, args.output, on_progress=print_progress)
-        print(f"\nInstrumental saved: {result_path}")
-    else:
-        print(f"\nDownloading audio from: {args.url}")
-        audio_path = download_audio(args.url, args.output, filename, on_progress=print_progress)
-        print(f"\nDone! Audio saved: {audio_path}")
+    def on_step(i: int) -> None:
+        name = steps[i - 1]
+        print(f"\n[{i}/{len(steps)}] {name}", end="", flush=True)
+        if name == "分離":
+            print(" (first run downloads the model, ~320MB)", end="", flush=True)
+        print()
+
+    print(f"\nDownloading from: {args.url}")
+    results = outputs.execute(options, args.url, args.output, filename, core,
+                              hooks=Hooks(on_step=on_step, on_progress=print_progress))
+    print()
+    for kind, path in results.items():
+        print(f"Done! {RESULT_LABELS[kind]} saved: {path}")
 
 
 def main():
