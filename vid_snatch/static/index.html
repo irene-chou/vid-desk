@@ -25,6 +25,10 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
+  /* body 是捲動容器：設定 modal 鎖住捲動時 scrollbar-gutter 仍保留捲軸空間，非 overlay 捲軸（Windows）下底層內容不位移
+     （Chrome 對 html 的 scrollbar-gutter 在 overflow: hidden 時不保留，所以不能放在 html） */
+  html { height: 100%; overflow: hidden; }
+  body { height: 100%; overflow-y: auto; scrollbar-gutter: stable; }
   body {
     background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -183,7 +187,7 @@
   /* 設定 modal：桌面 480px 置中、窄版貼齊 16px 邊距；內容過高時 dialog 內捲、頁面不捲 */
   dialog.settings { width: min(480px, calc(100vw - 32px)); max-width: none; padding: 16px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; }
   dialog.settings[open] { display: grid; gap: 14px; align-content: start; }
-  html:has(dialog.settings[open]) { overflow: hidden; }
+  body:has(dialog.settings[open]) { overflow: hidden; }
   dialog p { margin: 0 0 16px; font-weight: 600; overflow-wrap: anywhere; }
   .dialog-buttons { display: flex; flex-direction: column; gap: 8px; }
   .dialog-buttons button { padding: 10px 14px; }

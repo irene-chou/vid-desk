@@ -35,7 +35,11 @@ def test_settings_is_modal_dialog():
     # 桌面 480px 置中、窄版貼齊 16px 邊距；內容過高時 dialog 內捲、頁面不捲
     assert re.search(r"dialog\.settings \{[^}]*width: min\(480px, calc\(100vw - 32px\)\);[^}]*max-height: calc\(100dvh - 32px\);[^}]*overflow: auto;", HTML)
     assert re.search(r"dialog\.settings\[open\] \{ display: grid; gap: 14px;", HTML)
-    assert "html:has(dialog.settings[open]) { overflow: hidden; }" in HTML
+    assert "body:has(dialog.settings[open]) { overflow: hidden; }" in HTML
+    # body 是捲動容器並保留捲軸空間：鎖住捲動時非 overlay 捲軸（Windows）下底層內容不位移
+    assert "html { height: 100%; overflow: hidden; }" in HTML
+    assert "body { height: 100%; overflow-y: auto; scrollbar-gutter: stable; }" in HTML
+    assert "html:has(dialog" not in HTML
 
 def test_advanced_notice_spaced_from_buttons():
     # #20 追加：「進階」底下的狀態訊息與按鈕列要分開（8px，與 .row 的 margin-top 同一個間距）
