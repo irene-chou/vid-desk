@@ -253,7 +253,10 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         Write-Host ''
         Write-Host '上次沒有順利啟動，正在修復元件…'
         Clear-CommitMarker
-        if (-not (Install-Packages @('--reinstall'))) { Exit-InstallFailed }
+        # --reinstall 會向網路重新確認快取，離線時改用 --offline 只靠快取
+        if (-not (Install-Packages @('--reinstall')) -and -not (Install-Packages @('--reinstall', '--offline'))) {
+            Exit-InstallFailed
+        }
         Set-CommitMarker $Commit
     } elseif ($null -eq $installed) {
         Write-Host ''
