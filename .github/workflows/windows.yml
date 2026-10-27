@@ -36,6 +36,11 @@ jobs:
               Write-Host "::error file=$f::missing UTF-8 BOM"
               $failed = $true
             }
+            if ($bytes.Length -ge 6 -and $bytes[3] -eq 0xEF -and $bytes[4] -eq 0xBB -and $bytes[5] -eq 0xBF) {
+              # 第二個 BOM 會變成檔案開頭的字元，第一行被當成指令執行
+              Write-Host "::error file=$f::duplicate UTF-8 BOM"
+              $failed = $true
+            }
             Write-Host "checked $f"
           }
           if ($failed) { exit 1 }

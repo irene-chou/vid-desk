@@ -1,4 +1,4 @@
-﻿﻿# vid-snatch Windows 原生安裝冒煙測試（只給 GitHub Actions 用）
+﻿# vid-snatch Windows 原生安裝冒煙測試（只給 GitHub Actions 用）
 # 依序跑下面的情境，共用同一份安裝；任一情境失敗就印出啟動器輸出與 $Root\logs\* 後 exit 1。
 # 需要環境變數 VS_SMOKE_SHA：這次測試的 commit（workflow 傳入），用來走真正的「從 GitHub 更新」路徑。
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
@@ -94,8 +94,12 @@ function Fail([string]$msg) {
 }
 
 # 沒被接住的錯誤（$ErrorActionPreference = 'Stop'）也要印出記錄檔
+# trap 對整個腳本一開始就生效；Fail 還沒定義時（例如前面的設定出錯）也要印出原始錯誤
 trap {
-    Fail "未預期的錯誤：$($_.Exception.Message)（$($_.InvocationInfo.PositionMessage)）"
+    $msg = "未預期的錯誤：$($_.Exception.Message)（$($_.InvocationInfo.PositionMessage)）"
+    Write-Host "::error::$msg"
+    if (Get-Command Fail -CommandType Function -ErrorAction SilentlyContinue) { Fail $msg }
+    exit 1
 }
 
 function Start-Scenario([string]$name) {
