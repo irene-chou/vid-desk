@@ -1,6 +1,8 @@
 ﻿# vid-snatch 穩定啟動器 (Windows)
-# 由 vid-snatch-Windows.bat 呼叫：把 GitHub main 的最新原始碼放到 %LOCALAPPDATA%\vid-snatch\app\，
+# 由 vid-snatch-Windows.bat 呼叫：把 GitHub latest 標籤（release.yml 每次 main 更新時移動）的原始碼放到 %LOCALAPPDATA%\vid-snatch\app\，
 # 再執行那一份的 vid-snatch.ps1。這個檔案發佈後幾乎不會再更新，請保持精簡。
+# 與 vid-snatch.ps1 的約定（見該檔開頭）：封存檔根目錄有 vid-snatch.ps1，接受 -Commit / -Upgrade，
+# 結束碼 10 代表要更新，其他照原樣傳回給 .bat。
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
 
 $ProgressPreference = 'SilentlyContinue'
@@ -17,7 +19,7 @@ $AppDir = Join-Path $Root 'app'
 # launcher.ps1 所在資料夾的上一層即原始碼資料夾（repo 根目錄，或下載包的 files\）
 $BundleDir = Split-Path $PSScriptRoot -Parent
 $UpdateApi = $env:VS_UPDATE_API
-if (-not $UpdateApi) { $UpdateApi = "https://api.github.com/repos/$Repo/commits/main" }
+if (-not $UpdateApi) { $UpdateApi = "https://api.github.com/repos/$Repo/commits/latest" }
 
 # 使用者看到的最外層資料夾（下載包配置為 files\ 的上一層），供主腳本顯示
 $LaunchDir = $BundleDir
@@ -89,7 +91,10 @@ function Get-SourceDir {
     Write-Host '正在檢查更新…'
     try {
         $sha = Get-LatestCommit
-        if ($sha -ne (Get-AppCommit)) { Install-Source $sha }
+        # app\ 已是這個版本但主腳本不見了（被防毒或手動刪掉）也要重新下載
+        if ($sha -ne (Get-AppCommit) -or -not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) {
+            Install-Source $sha
+        }
         return @{ Dir = $AppDir; Commit = $sha }
     } catch {
         # 離線或下載失敗是正常情況，不印錯誤，改用既有的原始碼
@@ -104,8 +109,14 @@ function Get-SourceDir {
 }
 
 # 主腳本結束碼：0 正常、1 失敗、10 要求更新（以 -Upgrade 重新取原始碼再執行）
+# 連續要求更新最多 3 次，避免主腳本出錯時無限重來
 $upgrade = $false
+$rounds = 0
 while ($true) {
+    if ($rounds -ge 3) {
+        Write-Host '更新沒有完成，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
+        exit 1
+    }
     $source = Get-SourceDir
     $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $source.Dir 'vid-snatch.ps1'),
         '-Commit', $source.Commit)
@@ -114,4 +125,5 @@ while ($true) {
     $code = $LASTEXITCODE
     if ($code -ne 10) { exit $code }
     $upgrade = $true
+    $rounds++
 }
