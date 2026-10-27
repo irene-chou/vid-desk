@@ -32,9 +32,12 @@ $VenvDir = Join-Path $Root 'venv'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
 $VenvExe = Join-Path $VenvDir 'Scripts\vid-snatch.exe'
 $TorchDir = Join-Path $Root 'torch'
-$ModelDir = Join-Path $TorchDir 'hub\checkpoints'
+# demucs 4.1 從 Hugging Face Hub 讀去人聲模型，快取放這裡
+$HfHome = Join-Path $Root 'huggingface'
 $StateDir = Join-Path $Root 'state'
 $CommitMarker = Join-Path $StateDir 'installed-commit'
+# 去人聲模型已預載到 $HfHome
+$ModelMarker = Join-Path $StateDir 'models-ready'
 # 上次啟動失敗時留下，下次啟動改用 uv pip install --reinstall 修復 venv
 $RepairFlag = Join-Path $StateDir 'repair'
 $LogDir = Join-Path $Root 'logs'
@@ -93,9 +96,6 @@ function Wait-AnyKey([string]$msg) {
 $UvUrl = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
 $DenoUrl = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
 $FfmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
-$ModelBaseUrl = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/'
-# htdemucs_ft 由 4 個模型組成（清單見 demucs 套件內的 remote/htdemucs_ft.yaml）
-$ModelFiles = @('f7e0c4bc-ba3fe64a.th', 'd12395a8-e57c48e6.th', '92cfc3b6-ef3bcb9c.th', '04573f0d-f3cf25b2.th')
 $RetryHint = '請確認網路連線後重新雙擊 vid-snatch-Windows.bat'
 
 function Remove-IfExists([string]$path) {
@@ -163,6 +163,9 @@ function Set-InstallEnv {
     # PATH 只在本行程內前置 bin\，不修改系統或使用者設定
     if (-not ("$env:PATH".StartsWith("$BinDir;"))) { $env:PATH = "$BinDir;$env:PATH" }
     $env:TORCH_HOME = $TorchDir
+    $env:HF_HOME = $HfHome
+    # Windows 預設不能建符號連結，Hugging Face 會改成複製檔案，不必每次警告
+    $env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
     $env:UV_PYTHON_INSTALL_DIR = $PythonDir
     $env:UV_CACHE_DIR = $CacheDir
     # 一律用 uv 自己下載的 Python，避免日後移除系統 Python 時 venv 跟著壞掉
@@ -190,15 +193,17 @@ function Exit-InstallFailed {
 }
 
 # 安裝紀錄：裝套件前先刪掉，裝完才寫回，中斷時下次啟動會重新安裝
-function Set-CommitMarker([string]$value) {
+function Set-StateFile([string]$path, [string]$value) {
     try {
         [void][System.IO.Directory]::CreateDirectory($StateDir)
-        [System.IO.File]::WriteAllText($CommitMarker, $value)
+        [System.IO.File]::WriteAllText($path, $value)
     } catch {
-        Write-Host "無法寫入安裝紀錄：$CommitMarker"
+        Write-Host "無法寫入安裝紀錄：$path"
         exit 1
     }
 }
+
+function Set-CommitMarker([string]$value) { Set-StateFile $CommitMarker $value }
 
 function Clear-CommitMarker {
     try {
@@ -248,6 +253,7 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     if (Test-Path -LiteralPath $CommitMarker) {
         $installed = ([System.IO.File]::ReadAllText($CommitMarker)).Trim()
     }
+    $pkgChanged = $false
     if (Test-Path -LiteralPath $RepairFlag) {
         # 上次裝完卻沒能啟動：整個 venv 重裝（套件都在 uv 快取裡，離線也能完成）
         Write-Host ''
@@ -258,16 +264,19 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
             Exit-InstallFailed
         }
         Set-CommitMarker $Commit
+        $pkgChanged = $true
     } elseif ($null -eq $installed) {
         Write-Host ''
         Write-Host '正在安裝去人聲元件（約 1 GB，約 5–10 分鐘）…'
         if (-not (Install-Packages @())) { Exit-InstallFailed }
         Set-CommitMarker $Commit
+        $pkgChanged = $true
     } elseif ($Upgrade) {
         Write-Host '正在更新元件…'
         Clear-CommitMarker
         if (-not (Install-Packages @('--upgrade', '--reinstall-package', 'vid-snatch'))) { Exit-InstallFailed }
         Set-CommitMarker $Commit
+        $pkgChanged = $true
     } elseif ($installed -ne $Commit -or -not (Test-Path -LiteralPath $VenvExe) -or
         ($Commit -eq 'local' -and $env:VS_SOURCE -eq 'local')) {
         # 'local'（解壓資料夾的原始碼）只在開發／測試指定 VS_SOURCE=local 時每次重裝
@@ -275,6 +284,7 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         Clear-CommitMarker
         if (Install-Packages @('--reinstall-package', 'vid-snatch')) {
             Set-CommitMarker $Commit
+            $pkgChanged = $true
         } elseif (Test-Path -LiteralPath $VenvExe) {
             # 多半是離線（安裝需要網路），先用已安裝的版本，下次啟動再試
             Write-Host ''
@@ -285,12 +295,20 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         }
     }
 
-    for ($i = 0; $i -lt $ModelFiles.Count; $i++) {
-        $name = $ModelFiles[$i]
-        $dest = Join-Path $ModelDir $name
-        if (-not (Test-Path -LiteralPath $dest)) {
-            Save-Download ($ModelBaseUrl + $name) $dest "去人聲模型 $($i + 1)/$($ModelFiles.Count)（共約 320 MB）"
+    # 由 vid_snatch.models 依 demucs 自己的規則下載到 Hugging Face 快取（中斷後會續傳）。
+    # 套件有變動時也重跑一次：已下載的檔案只做快速比對，新版改用別的模型時會補下載
+    if ($pkgChanged -or -not (Test-Path -LiteralPath $ModelMarker)) {
+        Write-Host ''
+        Write-Host '正在準備去人聲模型（第一次約 320 MB）…'
+        try { Remove-IfExists $ModelMarker } catch { }
+        Remove-Item Env:\HF_HUB_OFFLINE -ErrorAction SilentlyContinue
+        & $VenvPython -m vid_snatch.models | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ''
+            Write-Host "下載去人聲模型失敗，$RetryHint"
+            exit 1
         }
+        Set-StateFile $ModelMarker '1'
     }
 }
 
@@ -352,6 +370,8 @@ function Start-Server {
     $env:VS_BIND = '127.0.0.1'
     # 輸出被導向記錄檔時 Python 預設用 cp1252 等系統編碼，改成 UTF-8 中文才不會變亂碼
     $env:PYTHONUTF8 = '1'
+    # 去人聲模型已預載，執行時只讀 Hugging Face 快取、不連網
+    $env:HF_HUB_OFFLINE = '1'
     try {
         $proc = Start-Process -WindowStyle Hidden -FilePath $VenvExe -ArgumentList @('--web', '--port', "$p") `
             -RedirectStandardOutput $ServerLog -RedirectStandardError $ServerErrLog -PassThru -ErrorAction Stop

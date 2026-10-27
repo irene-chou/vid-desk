@@ -22,7 +22,9 @@
   python\                  UV_PYTHON_INSTALL_DIR
   cache\                   UV_CACHE_DIR
   venv\                    uv venv --seed（含 pip，core.update_ytdlp 需要）
-  torch\hub\checkpoints\<htdemucs_ft 的 4 個 .th>    TORCH_HOME = $Root\torch
+  torch\    TORCH_HOME = $Root\torch
+  huggingface\            HF_HOME（htdemucs_ft 模型快取）
+  state\models-ready      模型已預載
   config\config            output_dir=...（格式同 vid_snatch/config.py）
   state\installed-commit   venv 內 vid-snatch 套件對應的 commit
   logs\server.log          伺服器 stdout/stderr
@@ -36,7 +38,7 @@
   - uv：`https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip`
   - deno：`https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip`
   - ffmpeg：`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip`（取 `bin\ffmpeg.exe`、`bin\ffprobe.exe`）
-  - Demucs htdemucs_ft 模型（4 個檔案）：`https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/` 底下的 `f7e0c4bc-ba3fe64a.th`、`d12395a8-e57c48e6.th`、`92cfc3b6-ef3bcb9c.th`、`04573f0d-f3cf25b2.th`
+  - Demucs htdemucs_ft 模型（demucs 4.1 起從 Hugging Face Hub 讀取）：repo `adefossez/HTDemucs-ft` 的 `htdemucs_ft.yaml` 與 `f7e0c4bc`、`d12395a8`、`92cfc3b6`、`04573f0d` 四個 `.safetensors`（共約 320 MB），由 `python -m vid_snatch.models` 依 demucs 自己的檔名規則下載到 `HF_HOME = $Root\huggingface`；伺服器以 `HF_HUB_OFFLINE=1` 執行，只讀快取。Docker 版同樣預載到 `/root/.cache/huggingface`。
 - 所有下載先寫到 `<目標>.part`，完成後才改名，確保中斷後不會留下看似完整的檔案。
 - 使用者看到的文字一律繁體中文；失敗時保留視窗（主腳本 `exit 1`，由 `.bat` 在結束碼非 0 時 `pause` 停住）。
 - 測試與開發用環境變數（使用者不會設）：`VS_NO_BROWSER=1`（只印網址，既有）、`VS_SOURCE=local`（不查 GitHub，直接用解壓資料夾的原始碼）、`VS_UPDATE_API`（覆寫查最新 commit 的網址，CI 用來模擬離線）。

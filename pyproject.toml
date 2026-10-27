@@ -9,7 +9,10 @@ description = "Download YouTube audio/video and optionally remove vocals"
 requires-python = ">=3.10"
 dependencies = [
     "yt-dlp>=2024.0.0",
-    "demucs>=4.0.0",
+    # 4.1 起才有 demucs.api，且模型改從 Hugging Face Hub 讀（見 vid_snatch/models.py）
+    "demucs>=4.1.0",
+    "huggingface-hub",
+    "pyyaml",
     # demucs 執行時需要，但沒有列在它自己的依賴裡
     "numpy",
     "fastapi>=0.110",

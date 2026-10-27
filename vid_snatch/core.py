@@ -10,12 +10,12 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from vid_snatch.errors import VidSnatchError, translate
+from vid_snatch.models import DEMUCS_MODEL
 
 # 百分比 0-100；None 表示不定進度
 ProgressCallback = Callable[[float | None], None]
 
 DEFAULT_OUTPUT_DIR = Path("./output")
-DEMUCS_MODEL = "htdemucs_ft"  # fine-tuned: best quality, ~4x slower than htdemucs
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 YOUTUBE_PATTERNS = [

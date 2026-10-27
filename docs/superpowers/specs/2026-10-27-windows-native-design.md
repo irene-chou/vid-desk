@@ -41,7 +41,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 
 - **ffmpeg / ffprobe**：yt-dlp 轉檔與 Demucs 都需要。下載 Windows 靜態建置版放進 `%LOCALAPPDATA%\vid-snatch\`，由啟動腳本把所在目錄加到「該行程」的 PATH。
 - **deno**：Docker 映像檔裡裝了 deno，供 yt-dlp 解 YouTube 的 JS 驗證。Windows 版同樣下載 `deno.exe` 放進同一資料夾。
-- **Demucs htdemucs_ft 模型**：安裝時就下載（與 Docker 版預載同樣 4 個檔案 `f7e0c4bc-ba3fe64a.th`、`d12395a8-e57c48e6.th`、`92cfc3b6-ef3bcb9c.th`、`04573f0d-f3cf25b2.th`，共約 320 MB），放在資料夾內並以 `TORCH_HOME` 指過去，第一次去人聲不必再等。
+- **Demucs htdemucs_ft 模型**：安裝時就下載。demucs 4.1 起先從 Hugging Face Hub（`adefossez/HTDemucs-ft`：`htdemucs_ft.yaml` + 4 個 `.safetensors`，共約 320 MB）讀模型，所以預載到 Hugging Face 快取（Windows：`HF_HOME = %LOCALAPPDATA%\vid-snatch\huggingface`；Docker：`/root/.cache/huggingface`），伺服器以 `HF_HUB_OFFLINE=1` 執行，第一次去人聲不必再等、也不連網。
 - PyTorch 用 CPU 版。
 
 ### 3.3 架構：沿用「宿主端動作」協定

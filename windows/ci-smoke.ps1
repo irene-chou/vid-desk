@@ -336,6 +336,10 @@ $vocalScript = Join-Path $SmokeLogDir 'remove_vocals_check.py'
 import math, struct, sys, time, wave
 from pathlib import Path
 
+# 路徑含中文；輸出被導向時 Windows 預設 cp1252，print 會失敗
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from vid_snatch.core import remove_vocals
 
 work = Path(sys.argv[1])
@@ -360,29 +364,42 @@ size = out.stat().st_size if out.exists() else -1
 print(f"remove_vocals: {out} ({size} bytes, {elapsed:.1f} s)")
 sys.exit(0 if size > 0 else 2)
 '@, (New-Object System.Text.UTF8Encoding($false)))
-$filesBefore = Get-FileList $TorchDir
-# 與 Start-Server 相同：bin\ 在 PATH 最前面（demucs 用 ffmpeg 讀檔）、TORCH_HOME 指向 $Root\torch
+$HfHome = Join-Path $Root 'huggingface'
+$weights = @(Get-ChildItem -LiteralPath $HfHome -Recurse -File -Filter '*.safetensors' -ErrorAction SilentlyContinue)
+if ($weights.Count -lt 4) { Fail "$HfHome 只有 $($weights.Count) 個 .safetensors（預期 htdemucs_ft 的 4 個已預載）" }
+Write-Host "$HfHome 有 $($weights.Count) 個 .safetensors"
+# 模型可能被寫到的所有快取：Hugging Face、torch hub（demucs 的舊來源）、XDG
+$watchDirs = @($HfHome, $TorchDir, (Join-Path $Root 'cache-xdg'))
+$filesBefore = ($watchDirs | ForEach-Object { "[$_]`n" + (Get-FileList $_) }) -join "`n"
+# 與 vid-snatch.ps1 的伺服器環境相同：bin\ 在 PATH 最前面（demucs 用 ffmpeg 讀檔）、
+# TORCH_HOME / HF_HOME 在 $Root 底下、HF_HUB_OFFLINE=1（證明不需要網路）
+$envNames = @('TORCH_HOME', 'HF_HOME', 'HF_HUB_OFFLINE', 'HF_HUB_DISABLE_SYMLINKS_WARNING')
 $savedPath = $env:PATH
 $env:PATH = "$(Join-Path $Root 'bin');$env:PATH"
 $env:TORCH_HOME = $TorchDir
-$env:PYTHONUTF8 = '1'
+$env:HF_HOME = $HfHome
+$env:HF_HUB_OFFLINE = '1'
+$env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
 $ErrorActionPreference = 'Continue'
+# -I 會忽略 PYTHON* 環境變數，所以 UTF-8 由腳本自己設定
 & $venvPython -I $vocalScript $vocalDir | Out-Host
 $code = $LASTEXITCODE
 $ErrorActionPreference = 'Stop'
 # 還原環境，後面的啟動器才是在測 vid-snatch.ps1 自己的設定
 $env:PATH = $savedPath
-Remove-Item Env:\TORCH_HOME
-Remove-Item Env:\PYTHONUTF8
+foreach ($n in $envNames) { Remove-Item "Env:\$n" -ErrorAction SilentlyContinue }
 if ($code -ne 0) { Fail "remove_vocals 失敗，結束碼 $code" }
 $mp3 = @(Get-ChildItem -LiteralPath $vocalDir -Filter '*_no_vocals.mp3' -File)
 if ($mp3.Count -ne 1 -or $mp3[0].Length -le 0) { Fail "$vocalDir 沒有非空的 _no_vocals.mp3" }
 Write-Host "已產生 $($mp3[0].Name)（$($mp3[0].Length) bytes）"
-$filesAfter = Get-FileList $TorchDir
+$filesAfter = ($watchDirs | ForEach-Object { "[$_]`n" + (Get-FileList $_) }) -join "`n"
 if ($filesAfter -ne $filesBefore) {
-    Fail "載入模型時 $TorchDir 有變動（不應再下載）。之前：`n$filesBefore`n之後：`n$filesAfter"
+    Fail "去人聲時模型快取有變動（不應再下載）。之前：`n$filesBefore`n之後：`n$filesAfter"
 }
-Write-Host "$TorchDir 沒有新增檔案"
+Write-Host "$($watchDirs -join '、') 都沒有變動"
+$profileCache = Join-Path $env:USERPROFILE '.cache'
+if (Test-Path -LiteralPath $profileCache) { Fail "使用者資料夾出現 $profileCache（快取應放在 $Root）" }
+Write-Host "使用者資料夾沒有 .cache"
 
 # ── 5. 從 GitHub 取得原始碼 ─────────────────
 Start-Scenario '5. 從 GitHub 取得原始碼'
