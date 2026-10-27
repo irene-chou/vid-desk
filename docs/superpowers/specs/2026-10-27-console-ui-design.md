@@ -69,7 +69,7 @@
 - 字體：IBM Plex Sans（UI）、IBM Plex Mono（網址、檔名、數字、狀態）、中文 Noto Sans TC；皆由 Google Fonts 載入，離線退回 `-apple-system, "PingFang TC", "Microsoft JhengHei"` 與 `ui-monospace, Menlo, Consolas`。
 - 淺色：bg #f5f6f8、panel #ffffff、fg #16181d、muted #6b7280、line #e2e4e9、sub #eef0f3、accent #0f766e（字 #ffffff）、ok #15803d、bad #b91c1c、warn #b45309。
 - 深色：bg #0f1114、panel #171a1f、fg #e6e8ec、muted #8b919c、line #262a31、sub #1f232a、accent #2dd4bf（字 #06201c）、ok #4ade80、bad #f87171、warn #fbbf24。
-- 深淺切換（#26）：每個色票 token 只定義一份 `--x: light-dark(淺, 深)`，由 `color-scheme` 決定取哪個。`:root { color-scheme: light dark }` 跟隨系統；設定裡選淺 / 深色時 `<html data-theme="light|dark">` 把 `color-scheme` 固定成 `light` / `dark`，原生表單、捲軸、dialog backdrop 跟著變。`<head>` 最前面的 inline script 在第一次繪製前就從 `localStorage` 讀回並設好 `data-theme`，開頁不閃色；讀不到（沒存、值不合法、`localStorage` 不可用）就當跟隨系統，`data-theme` 不設。
+- 深淺切換（#26）：淺色 token 在 `:root`（含 `color-scheme: light dark`，沒有 `data-theme` 就跟隨系統）。深色 token 寫兩份、必須同步（`tests/test_static.py` 會比對）：`@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }` 與 `:root[data-theme="dark"]`，兩處都設 `color-scheme: dark`；`:root[data-theme="light"]` 設 `color-scheme: light`。不用 `light-dark()`（需要 Safari 17.5+，舊 Safari 會整頁失色）。`color-scheme` 跟著切，原生表單、捲軸、dialog backdrop 跟著變。`<head>` 最前面的 inline script 在第一次繪製前就從 `localStorage` 讀回並設好 `data-theme`，開頁不閃色；讀不到（沒存、值不合法、`localStorage` 不可用）就當跟隨系統，`data-theme` 不設。
 - 圓角：面板 12px、選項卡 10px、按鈕 8px、膠囊 999px。圖示鈕 34px，小型 28px。
 - 圖示：Lucide，24 格 2px 線，內嵌一個 `<svg><symbol>` sprite（mockup 內已含全部 symbol，可直接複製）。
 - 動畫：轉圈 1s linear；`prefers-reduced-motion` 時停止。

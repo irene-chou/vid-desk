@@ -69,7 +69,7 @@ def test_fonts_from_google_with_system_fallback():
     assert re.search(r'--mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas', HTML)
 
 def test_csrf_header_and_sse_present():
-    assert "X-Vid-Snatch" in HTML and "EventSource" in HTML
+    assert "X-Vid-Snatch" in HTML and "EventSource" in HTML and "prefers-color-scheme" in HTML
 
 def test_reduced_motion_respected():
     assert "prefers-reduced-motion: reduce" in HTML
@@ -98,18 +98,25 @@ def test_card_name_falls_back_to_display_name():
 def test_color_scheme_declared():
     assert re.search(r":root\s*\{\s*color-scheme: light dark;", HTML)
 
-def test_theme_tokens_defined_once_and_follow_color_scheme():
-    # #26：深淺色 token 只定義一份（light-dark()），由 color-scheme 決定取哪個；
-    # 沒有 data-theme 時 color-scheme: light dark 跟系統，選了淺 / 深色就固定 color-scheme
-    root = re.search(r":root\s*\{(.*?)\n  \}", HTML, re.S).group(1)
-    for token in ["--bg", "--panel", "--fg", "--muted", "--line", "--sub", "--accent", "--accent-fg", "--ok", "--bad", "--warn"]:
-        assert re.search(token + r": light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);", root), token
+COLOR_TOKENS = ["--bg", "--panel", "--fg", "--muted", "--line", "--sub", "--accent", "--accent-fg", "--ok", "--bad", "--warn"]
+
+def _tokens(block):
+    return dict(re.findall(r"(--[a-z-]+): (#[0-9a-f]{6});", block))
+
+def test_dark_tokens_both_selectors_in_sync():
+    # #26：深色 token 寫兩份——系統深色且沒選淺色、明確選深色——兩處的「變數: 值」必須完全相同，
+    # 淺色（:root）定義同一組變數名；color-scheme 跟著切
+    light = re.search(r":root\s*\{\s*color-scheme: light dark;(.*?)\n  \}", HTML, re.S).group(1)
+    media = re.search(r'@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{\s*color-scheme: dark;(.*?)\n    \}\s*\}', HTML, re.S)
+    forced = re.search(r':root\[data-theme="dark"\] \{\s*color-scheme: dark;(.*?)\n  \}', HTML, re.S)
+    assert media and forced, "兩個深色選擇器都要在"
+    dark_media, dark_forced = _tokens(media.group(1)), _tokens(forced.group(1))
+    assert dark_media == dark_forced, "兩份深色 token 不同步"
+    assert set(dark_media) == set(_tokens(light)) == set(COLOR_TOKENS)
+    assert dark_media != _tokens(light)
+    assert dark_media["--bg"] == "#0f1114" and dark_media["--accent"] == "#2dd4bf"
     assert ':root[data-theme="light"] { color-scheme: light; }' in HTML
-    assert ':root[data-theme="dark"] { color-scheme: dark; }' in HTML
-    # 不再有 @media 版的深色 token（那會變成第二份定義）
-    assert "prefers-color-scheme" not in HTML
-    # 深色色票仍是 spec 的那組
-    assert "--bg: light-dark(#f5f6f8, #0f1114);" in HTML and "--accent: light-dark(#0f766e, #2dd4bf);" in HTML
+    assert "light-dark(" not in HTML
 
 def test_theme_option_in_settings():
     # 設定 modal 有「主題」三段式：跟隨系統 / 淺色 / 深色，沿用 .seg，radiogroup 以文字標籤為名
