@@ -98,6 +98,62 @@ def test_card_name_falls_back_to_display_name():
 def test_color_scheme_declared():
     assert re.search(r":root\s*\{\s*color-scheme: light dark;", HTML)
 
+COLOR_TOKENS = ["--bg", "--panel", "--fg", "--muted", "--line", "--sub", "--accent", "--accent-fg", "--ok", "--bad", "--warn"]
+
+def _tokens(block):
+    return dict(re.findall(r"(--[a-z-]+): (#[0-9a-f]{6});", block))
+
+def test_dark_tokens_both_selectors_in_sync():
+    # #26：深色 token 寫兩份——系統深色且沒選淺色、明確選深色——兩處的「變數: 值」必須完全相同，
+    # 淺色（:root）定義同一組變數名；color-scheme 跟著切
+    light = re.search(r":root\s*\{\s*color-scheme: light dark;(.*?)\n  \}", HTML, re.S).group(1)
+    media = re.search(r'@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{\s*color-scheme: dark;(.*?)\n    \}\s*\}', HTML, re.S)
+    forced = re.search(r':root\[data-theme="dark"\] \{\s*color-scheme: dark;(.*?)\n  \}', HTML, re.S)
+    assert media and forced, "兩個深色選擇器都要在"
+    dark_media, dark_forced = _tokens(media.group(1)), _tokens(forced.group(1))
+    assert dark_media == dark_forced, "兩份深色 token 不同步"
+    assert set(dark_media) == set(_tokens(light)) == set(COLOR_TOKENS)
+    assert dark_media != _tokens(light)
+    assert dark_media["--bg"] == "#0f1114" and dark_media["--accent"] == "#2dd4bf"
+    assert ':root[data-theme="light"] { color-scheme: light; }' in HTML
+    assert "light-dark(" not in HTML
+
+def test_theme_option_in_settings():
+    # 設定 modal 有「主題」三段式：跟隨系統 / 淺色 / 深色，沿用 .seg，radiogroup 以文字標籤為名
+    settings = re.search(r'<dialog id="settings".*?</dialog>', HTML, re.S).group(0)
+    row = re.search(r'<div class="kvline theme"><span class="k" id="lbl-theme">主題</span>\s*'
+                    r'<div class="seg" role="radiogroup" aria-labelledby="lbl-theme">(.*?)</div></div>', settings, re.S)
+    assert row, "設定裡要有主題列"
+    assert re.findall(r'<label><input type="radio" name="theme" value="(\w+)">([^<]+)</label>', row.group(1)) == [
+        ("system", "跟隨系統"), ("light", "淺色"), ("dark", "深色"),
+    ]
+    # 主題列在「進階」之前
+    assert settings.index('id="lbl-theme"') < settings.index("<summary>進階")
+    # 鍵盤：沿用 .seg 的隱藏 radio，focus 時 label 外框可見
+    assert ".seg label:has(input:focus-visible) { outline: 2px solid var(--accent);" in HTML
+    # 切換即時套用、寫 localStorage、畫回分段控制
+    assert re.search(r"function onThemeChange\(event\)\s*\{\s*const theme = parseTheme\(event\.target\.value\);\s*"
+                     r"applyTheme\(document\.documentElement, theme\);\s*writeTheme\(\(\) => localStorage, theme\);\s*renderTheme\(theme\);", HTML)
+    assert "for (const input of document.querySelectorAll('input[name=\"theme\"]')) input.addEventListener(\"change\", onThemeChange);" in HTML
+    assert "renderTheme(currentTheme());" in HTML
+    # 主題不走後端設定
+    assert '"theme"' not in re.search(r"SETTING_KEYS = \{[^}]*\}", HTML).group(0)
+
+def test_theme_applied_in_head_before_first_paint():
+    # <head> 裡的 inline script 在樣式表之前就把 data-theme 設好，開頁不閃錯的主題
+    head = re.search(r"<head>(.*?)</head>", HTML, re.S).group(1)
+    script = re.search(r"<script>(.*?)</script>", head, re.S)
+    assert script, "head 裡要有早期套用腳本"
+    assert head.index("<script>") < head.index('<link rel="stylesheet"') < head.index("<style>")
+    body = script.group(1)
+    assert "// @@theme-begin" in body and "// @@theme-end" in body
+    assert 'const THEME_KEY = "vid-snatch.theme";' in body
+    assert "applyTheme(document.documentElement, readTheme(() => localStorage));" in body
+    # 讀寫都包 try，localStorage 不可用時當跟隨系統
+    assert re.search(r"function readTheme\(getStorage\)\s*\{\s*try \{ return parseTheme\(getStorage\(\)\.getItem\(THEME_KEY\)\); \} catch \(e\) \{ return \"system\"; \}", body)
+    assert re.search(r"function writeTheme\(getStorage, theme\)\s*\{\s*try \{", body)
+    assert re.search(r'if \(theme === "system"\) root\.removeAttribute\("data-theme"\); else root\.setAttribute\("data-theme", theme\);', body)
+
 def test_network_errors_become_chinese_message():
     assert HTML.count('throw new Error("發生錯誤")') >= 2
 
@@ -177,7 +233,7 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
-@pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs"])
+@pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):
     node = shutil.which("node")
     if not node:

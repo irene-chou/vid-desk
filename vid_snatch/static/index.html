@@ -4,6 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vid-snatch</title>
+<script>
+// ===== 主題（#26）：在第一次繪製前就套好 data-theme，開頁不閃色 =====
+// 純函式區塊由 tests/theme.test.mjs 以 node 直接測；下面主程式也沿用這幾個函式
+// @@theme-begin
+const THEME_KEY = "vid-snatch.theme";
+const THEMES = ["system", "light", "dark"];
+
+// 存值不在清單內（包含 null）一律當「跟隨系統」
+function parseTheme(value) {
+  return THEMES.includes(value) ? value : "system";
+}
+
+// localStorage 可能整個不可用（隱私模式、停用 cookie），getStorage 與 getItem 都包在 try 裡
+function readTheme(getStorage) {
+  try { return parseTheme(getStorage().getItem(THEME_KEY)); } catch (e) { return "system"; }
+}
+
+// 「跟隨系統」是預設，直接把 key 刪掉；寫不進去就只在這次分頁生效
+function writeTheme(getStorage, theme) {
+  try {
+    const storage = getStorage();
+    if (theme === "system") storage.removeItem(THEME_KEY); else storage.setItem(THEME_KEY, theme);
+  } catch (e) { /* 忽略 */ }
+}
+
+// 跟隨系統時拿掉 data-theme，讓 color-scheme: light dark 跟著系統；否則固定 light / dark
+function applyTheme(root, theme) {
+  if (theme === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", theme);
+}
+// @@theme-end
+applyTheme(document.documentElement, readTheme(() => localStorage));
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
@@ -17,11 +49,21 @@
     --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
     --r-panel: 12px; --r-card: 10px; --r-btn: 8px;
   }
+  /* 主題（#26）：沒有 data-theme 就跟隨系統；設定裡選了淺 / 深色就固定。
+     深色 token 下面有兩份（系統深色且沒選淺色、明確選深色），改色票時兩處必須同步，tests/test_static.py 會比對。
+     color-scheme 一起切，原生表單、捲軸、dialog backdrop 才會跟著變 */
+  :root[data-theme="light"] { color-scheme: light; }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #0f1114; --panel: #171a1f; --fg: #e6e8ec; --muted: #8b919c; --line: #262a31; --sub: #1f232a;
       --accent: #2dd4bf; --accent-fg: #06201c; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
     }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1114; --panel: #171a1f; --fg: #e6e8ec; --muted: #8b919c; --line: #262a31; --sub: #1f232a;
+    --accent: #2dd4bf; --accent-fg: #06201c; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -172,6 +214,8 @@
   /* ===== 設定 ===== */
   .kvline { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; font-size: 0.85rem; }
   .kvline .k { color: var(--muted); font-size: 0.74rem; }
+  /* 主題列放分段控制，和標籤垂直置中而不是對齊 baseline（#26） */
+  .kvline.theme { align-items: center; }
   #output-dir { overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.8rem; }
   .settings details > summary { font-size: 0.8rem; }
   .settings details .row { margin-top: 8px; }
@@ -317,6 +361,12 @@
     <button id="pick-folder" type="button">更換資料夾</button>
     <button id="shutdown" type="button">結束 vid-snatch</button>
   </div>
+  <div class="kvline theme"><span class="k" id="lbl-theme">主題</span>
+    <div class="seg" role="radiogroup" aria-labelledby="lbl-theme">
+      <label><input type="radio" name="theme" value="system">跟隨系統</label>
+      <label><input type="radio" name="theme" value="light">淺色</label>
+      <label><input type="radio" name="theme" value="dark">深色</label>
+    </div></div>
   <details>
     <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
     <div class="row">
@@ -1117,6 +1167,26 @@ function showVersion(version) {
   ver.hidden = false;
 }
 
+// 主題：目前生效的值以 <html data-theme> 為準（head 的早期套用腳本已從 localStorage 讀過）
+function currentTheme() {
+  return parseTheme(document.documentElement.getAttribute("data-theme") || "system");
+}
+
+function renderTheme(theme) {
+  checkRadio("theme", theme);
+  for (const input of document.querySelectorAll('input[name="theme"]')) {
+    input.closest("label").classList.toggle("on", input.checked);
+  }
+}
+
+// 切換即時生效、存進 localStorage（純個人偏好，不經後端）；存不進去就只在這次分頁生效
+function onThemeChange(event) {
+  const theme = parseTheme(event.target.value);
+  applyTheme(document.documentElement, theme);
+  writeTheme(() => localStorage, theme);
+  renderTheme(theme);
+}
+
 async function loadSettings() {
   try {
     const data = await getJson("/api/settings");
@@ -1208,12 +1278,14 @@ $("settings-toggle").addEventListener("click", openSettings);
 $("settings-close").addEventListener("click", () => $("settings").close());
 $("settings").addEventListener("click", onSettingsBackdropClick);
 $("settings").addEventListener("close", onSettingsClosed);
+for (const input of document.querySelectorAll('input[name="theme"]')) input.addEventListener("change", onThemeChange);
 $("pick-folder").addEventListener("click", pickFolder);
 $("shutdown").addEventListener("click", shutdown);
 $("rebuild").addEventListener("click", rebuild);
 $("uninstall").addEventListener("click", uninstall);
 $("clear-done").addEventListener("click", clearDone);
 
+renderTheme(currentTheme());
 renderOutputs();
 loadSettings();
 loadJobs();
