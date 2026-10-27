@@ -1,0 +1,432 @@
+<title>vid-snatch 控制台設計</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+/* Layout: design doc wrapping two live mockups of direction A (desktop frame, phone frame via container query), then IA notes and icon legend. */
+:root {
+  --bg: #f3f2ee; --fg: #1b1b1f; --muted: #65656d; --line: #d9d8d2; --card: #ffffff; --accent: #b5471f;
+  --tc: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --doc-font: "Manrope", var(--tc);
+  /* App tokens (direction A) */
+  --a-bg: #f5f6f8; --a-panel: #ffffff; --a-fg: #16181d; --a-muted: #6b7280; --a-line: #e2e4e9; --a-sub: #eef0f3;
+  --a-accent: #0f766e; --a-accent-fg: #ffffff; --a-ok: #15803d; --a-bad: #b91c1c; --a-warn: #b45309;
+  --a-sans: "IBM Plex Sans", var(--tc); --a-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --fg: #ebebe9; --muted: #9c9ca3; --line: #2e2e33; --card: #1d1d21; --accent: #e8824f; color-scheme: dark;
+    --a-bg: #0f1114; --a-panel: #171a1f; --a-fg: #e6e8ec; --a-muted: #8b919c; --a-line: #262a31; --a-sub: #1f232a; --a-accent: #2dd4bf; --a-accent-fg: #06201c; --a-ok: #4ade80; --a-bad: #f87171; --a-warn: #fbbf24;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --fg: #ebebe9; --muted: #9c9ca3; --line: #2e2e33; --card: #1d1d21; --accent: #e8824f; color-scheme: dark;
+  --a-bg: #0f1114; --a-panel: #171a1f; --a-fg: #e6e8ec; --a-muted: #8b919c; --a-line: #262a31; --a-sub: #1f232a; --a-accent: #2dd4bf; --a-accent-fg: #06201c; --a-ok: #4ade80; --a-bad: #f87171; --a-warn: #fbbf24;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--doc-font); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 80px; }
+.doc { max-width: 1060px; margin: 0 auto; }
+h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 8px; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 1.4rem; margin: 0 0 12px; letter-spacing: -0.01em; }
+p { margin: 0 0 12px; max-width: 70ch; }
+.lead { color: var(--muted); font-size: 1.05rem; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 32px; }
+.switch { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--card); }
+.switch button { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 6px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.switch button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+section { border-top: 1px solid var(--line); padding-top: 28px; margin-top: 40px; }
+.frame { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+.frame-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 0.75rem; color: var(--muted); }
+.frame-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); display: inline-block; }
+.frame-bar span { margin-left: 8px; font-family: var(--tc); }
+.phone-wrap { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; margin-top: 24px; }
+.phone { width: 390px; max-width: 100%; flex: none; }
+.phone .mock { padding: 14px; }
+.phone-note { flex: 1; min-width: 260px; }
+ul { padding-left: 20px; margin: 0 0 12px; } li { margin-bottom: 6px; max-width: 70ch; }
+.legend { overflow-x: auto; }
+.legend table { border-collapse: collapse; font-size: 0.9rem; min-width: 560px; width: 100%; }
+.legend th, .legend td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.legend th { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.legend td:first-child { font-size: 1.25rem; width: 48px; }
+.tree { font-family: var(--a-mono); font-size: 0.85rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; white-space: pre; overflow-x: auto; line-height: 1.7; }
+.call { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 20px 0; }
+.call p { margin: 0 0 8px; }
+
+/* ===== App mock (direction A) ===== */
+.ic { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; flex: none; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.mock { padding: 24px; container-type: inline-size; font-family: var(--a-sans); color: var(--a-fg); background: var(--a-bg); font-size: 15px; line-height: 1.5; }
+.app { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; }
+@container (max-width: 760px) { .app { grid-template-columns: 1fr; } .mock .hdr .stat { display: none; } }
+.hdr { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--a-line); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+.brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--a-accent); color: var(--a-accent-fg); display: grid; place-items: center; font-size: 15px; }
+.stat { font-family: var(--a-mono); font-size: 0.78rem; color: var(--a-muted); display: flex; gap: 14px; }
+.stat span { display: inline-flex; gap: 5px; align-items: center; }
+.stat b { color: var(--a-fg); font-weight: 500; }
+.ibtn { border: 1px solid var(--a-line); background: var(--a-panel); color: var(--a-fg); border-radius: 8px; width: 34px; height: 34px; display: inline-grid; place-items: center; font-size: 1rem; cursor: pointer; padding: 0; }
+.ibtn.sm { width: 28px; height: 28px; font-size: 0.9rem; border-radius: 7px; }
+.ibtn.ghost { border-color: transparent; background: transparent; color: var(--a-muted); }
+.ibtn:hover { border-color: var(--a-accent); color: var(--a-accent); }
+.panel { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 12px; padding: 16px; display: grid; gap: 14px; align-content: start; }
+.lbl { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--a-muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+.ta { width: 100%; min-height: 88px; border: 1px solid var(--a-line); border-radius: 8px; padding: 10px; font-family: var(--a-mono); font-size: 0.8rem; line-height: 1.6; background: var(--a-sub); color: var(--a-fg); resize: vertical; }
+.field { display: grid; gap: 6px; }
+
+/* output option cards */
+.out { border: 1px solid var(--a-line); border-radius: 10px; background: var(--a-panel); overflow: hidden; }
+.out.on { border-color: var(--a-accent); }
+.out-h { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.out.on .out-h { background: color-mix(in srgb, var(--a-accent) 7%, var(--a-panel)); }
+.out-h input { margin: 0; accent-color: var(--a-accent); width: 16px; height: 16px; }
+.out-h .t { font-weight: 600; font-size: 0.9rem; display: flex; gap: 8px; align-items: center; }
+.out-h .sum { margin-left: auto; font-family: var(--a-mono); font-size: 0.72rem; color: var(--a-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.out-b { padding: 10px 12px 12px; border-top: 1px solid var(--a-line); display: grid; gap: 10px; }
+.out:not(.on) .out-b { display: none; }
+.sub { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; font-size: 0.82rem; }
+.sub .k { color: var(--a-muted); font-size: 0.74rem; display: inline-flex; gap: 5px; align-items: center; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--a-line); font-size: 0.8rem; cursor: pointer; background: var(--a-panel); color: var(--a-fg); }
+.chip input { margin: 0; accent-color: var(--a-accent); width: 14px; height: 14px; }
+.chip.on { border-color: var(--a-accent); background: color-mix(in srgb, var(--a-accent) 10%, var(--a-panel)); }
+.chip small { font-family: var(--a-mono); font-size: 0.68rem; color: var(--a-muted); }
+.seg { display: inline-flex; border: 1px solid var(--a-line); border-radius: 7px; padding: 2px; gap: 2px; background: var(--a-sub); }
+.seg label { padding: 3px 9px; border-radius: 5px; font-size: 0.76rem; font-family: var(--a-mono); cursor: pointer; color: var(--a-muted); }
+.seg label.on { background: var(--a-panel); color: var(--a-fg); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+.seg input { display: none; }
+.adv { border-top: 1px dashed var(--a-line); padding-top: 8px; }
+.adv > summary { list-style: none; cursor: pointer; font-size: 0.76rem; color: var(--a-muted); display: inline-flex; gap: 6px; align-items: center; }
+.adv > summary::-webkit-details-marker { display: none; }
+.adv > summary .chev { transition: transform 150ms; }
+.adv[open] > summary .chev { transform: rotate(180deg); }
+.adv .sub { margin-top: 8px; }
+
+.names { display: grid; gap: 8px; }
+.name { display: grid; grid-template-columns: 1fr; gap: 2px; }
+.name .u { font-family: var(--a-mono); font-size: 0.72rem; color: var(--a-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 5px; align-items: center; }
+.name input { width: 100%; border: 1px solid var(--a-line); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 0.85rem; background: var(--a-panel); color: var(--a-fg); }
+.go { width: 100%; padding: 11px 14px; border-radius: 8px; border: 0; background: var(--a-accent); color: var(--a-accent-fg); font: inherit; font-weight: 600; font-size: 0.92rem; cursor: pointer; display: flex; justify-content: center; gap: 10px; align-items: center; }
+.go .cnt { font-family: var(--a-mono); font-weight: 500; font-size: 0.74rem; opacity: 0.85; background: rgba(0,0,0,0.15); padding: 2px 8px; border-radius: 999px; }
+
+/* queue */
+.q { display: grid; gap: 10px; align-content: start; }
+.qh { display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+.job { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; border-left-width: 3px; }
+.job.run { border-left-color: var(--a-accent); } .job.done { border-left-color: var(--a-ok); } .job.fail { border-left-color: var(--a-bad); } .job.wait { border-left-color: var(--a-line); }
+.jt { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.jt .n { font-weight: 600; font-size: 0.92rem; min-width: 0; overflow-wrap: anywhere; }
+.st { font-family: var(--a-mono); font-size: 0.72rem; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.run .st { color: var(--a-accent); } .done .st { color: var(--a-ok); } .fail .st { color: var(--a-bad); } .wait .st { color: var(--a-muted); }
+.kv { display: grid; grid-template-columns: 18px 1fr; gap: 3px 8px; font-size: 0.76rem; font-family: var(--a-mono); color: var(--a-muted); align-items: center; }
+.kv .ic { color: var(--a-muted); }
+.kv b { font-weight: 400; color: var(--a-fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv a { color: var(--a-accent); text-decoration: none; }
+.outs { display: flex; gap: 6px; flex-wrap: wrap; }
+.o { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--a-line); color: var(--a-muted); display: inline-flex; gap: 6px; align-items: center; font-family: var(--a-mono); }
+.o.did { border-color: color-mix(in srgb, var(--a-ok) 50%, transparent); color: var(--a-ok); }
+.o.now { border-color: var(--a-accent); color: var(--a-accent); background: color-mix(in srgb, var(--a-accent) 10%, transparent); }
+.o.bad { border-color: color-mix(in srgb, var(--a-bad) 50%, transparent); color: var(--a-bad); }
+.bar { height: 6px; border-radius: 3px; background: var(--a-sub); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--a-accent); border-radius: 3px; }
+.pct { display: flex; justify-content: space-between; font-family: var(--a-mono); font-size: 0.72rem; color: var(--a-muted); font-variant-numeric: tabular-nums; }
+.acts { display: flex; gap: 6px; justify-content: flex-end; }
+.err { font-size: 0.8rem; color: var(--a-bad); display: flex; gap: 6px; align-items: flex-start; }
+.divider { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--a-muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.2 3.9A2 2 0 0 0 7.5 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-xc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-checkc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 12h20M2 7.5h5M2 16.5h5M17 7.5h5M17 16.5h5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="m2 2 20 20M18.9 13.2A7 7 0 0 0 19 12v-2M5 10v2a7 7 0 0 0 12 5M15 9.3V5a3 3 0 0 0-5.9-.7M9 9v3a3 3 0 0 0 5.1 2.1M12 19v3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-title" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></symbol>
+  <symbol id="i-gem" viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20M12 22 7 9l5-6 5 6z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+</svg>
+
+<div class="doc">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">vid-snatch · 方向 A 定稿</div>
+      <h1>控制台設計</h1>
+      <p class="lead">輸出只剩兩個大選項「音檔」與「影片」。去人聲併入音檔，成為「版本」裡的一個勾選：原曲、伴奏、人聲，可以任選。進階細項收在每張選項卡底部，文字按鈕全部換成 SVG 圖示。</p>
+    </div>
+    <div class="switch" role="group" aria-label="預覽主題">
+      <button type="button" data-theme-pick="system" aria-pressed="true">跟隨系統</button>
+      <button type="button" data-theme-pick="light" aria-pressed="false">淺色</button>
+      <button type="button" data-theme-pick="dark" aria-pressed="false">深色</button>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="frame-bar"><i></i><i></i><i></i><span>localhost:8765 · 桌面寬度</span></div>
+    <div class="mock" id="mock-desktop">
+      <div class="app">
+        <div class="hdr">
+          <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span>vid-snatch</div>
+          <div class="stat">
+            <span title="排隊中"><svg class="ic"><use href="#i-clock"/></svg><b>1</b></span>
+            <span title="進行中"><svg class="ic spin"><use href="#i-loader"/></svg><b>1</b></span>
+            <span title="完成"><svg class="ic"><use href="#i-checkc"/></svg><b>1</b></span>
+            <span title="失敗"><svg class="ic"><use href="#i-xc"/></svg><b>1</b></span>
+          </div>
+          <button class="ibtn" type="button" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
+        </div>
+
+        <div class="panel">
+          <div class="field">
+            <div class="lbl">網址 <button class="ibtn sm" type="button" aria-label="貼上剪貼簿" title="貼上剪貼簿"><svg class="ic"><use href="#i-paste"/></svg></button></div>
+            <textarea class="ta" id="urls" aria-label="YouTube 網址">https://youtu.be/dQw4w9WgXcQ
+https://www.youtube.com/watch?v=jNQXAC9IVRw</textarea>
+          </div>
+
+          <div class="field">
+            <div class="lbl">輸出</div>
+
+            <div class="out on">
+              <label class="out-h">
+                <input type="checkbox" id="out-audio" checked>
+                <span class="t"><svg class="ic"><use href="#i-music"/></svg>音檔</span>
+                <span class="sum">MP3 192k · 原曲 + 伴奏</span>
+              </label>
+              <div class="out-b">
+                <div class="sub">
+                  <span class="k"><svg class="ic"><use href="#i-list"/></svg>版本</span>
+                  <div class="chips">
+                    <label class="chip on"><input type="checkbox" id="v-orig" checked><svg class="ic"><use href="#i-disc"/></svg>原曲</label>
+                    <label class="chip on"><input type="checkbox" id="v-inst" checked><svg class="ic"><use href="#i-mic-off"/></svg>伴奏 <small>3–8 min</small></label>
+                    <label class="chip"><input type="checkbox" id="v-voc"><svg class="ic"><use href="#i-mic"/></svg>人聲</label>
+                  </div>
+                </div>
+                <details class="adv">
+                  <summary><svg class="ic"><use href="#i-sliders"/></svg>細項<svg class="ic chev"><use href="#i-chev"/></svg></summary>
+                  <div class="sub"><span class="k">格式</span>
+                    <div class="seg"><label class="on"><input type="radio" name="fmt">MP3</label><label><input type="radio" name="fmt">M4A</label><label><input type="radio" name="fmt">WAV</label><label><input type="radio" name="fmt">FLAC</label></div></div>
+                  <div class="sub"><span class="k">位元率</span>
+                    <div class="seg"><label><input type="radio" name="br">128k</label><label class="on"><input type="radio" name="br">192k</label><label><input type="radio" name="br">320k</label></div></div>
+                  <div class="sub"><span class="k">分離模型</span>
+                    <div class="seg"><label title="htdemucs，約 1–2 分鐘"><input type="radio" name="mdl"><svg class="ic"><use href="#i-zap"/></svg> 快速</label><label class="on" title="htdemucs_ft，約 3–8 分鐘"><input type="radio" name="mdl"><svg class="ic"><use href="#i-gem"/></svg> 高品質</label></div></div>
+                </details>
+              </div>
+            </div>
+
+            <div class="out">
+              <label class="out-h">
+                <input type="checkbox" id="out-video">
+                <span class="t"><svg class="ic"><use href="#i-film"/></svg>影片</span>
+                <span class="sum">MP4 · 最佳畫質</span>
+              </label>
+              <div class="out-b">
+                <div class="sub"><span class="k">畫質上限</span>
+                  <div class="seg"><label class="on"><input type="radio" name="res">最佳</label><label><input type="radio" name="res">1080p</label><label><input type="radio" name="res">720p</label></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="lbl">檔名</div>
+            <div class="names">
+              <div class="name"><span class="u"><svg class="ic"><use href="#i-link"/></svg>youtu.be/dQw4w9WgXcQ</span><input id="n1" value="Rick Astley - Never Gonna Give You Up"></div>
+              <div class="name"><span class="u"><svg class="ic"><use href="#i-link"/></svg>youtube.com/watch?v=jNQXAC9IVRw</span><input id="n2" value="Me at the zoo"></div>
+            </div>
+          </div>
+
+          <button class="go" type="button"><svg class="ic"><use href="#i-play"/></svg>開始<span class="cnt">2 網址 · 4 檔案</span></button>
+        </div>
+
+        <div class="q">
+          <div class="qh"><span class="lbl">進行中與排隊</span></div>
+
+          <div class="job run">
+            <div class="jt"><span class="n">五月天 - 突然好想你</span><span class="st"><svg class="ic spin"><use href="#i-loader"/></svg>2/3 · 分離</span></div>
+            <div class="kv">
+              <svg class="ic"><use href="#i-link"/></svg><b><a href="https://youtu.be/8uSt_yOjhJo">youtu.be/8uSt_yOjhJo</a></b>
+              <svg class="ic"><use href="#i-title"/></svg><b>五月天 Mayday【突然好想你】Official Music Video</b>
+            </div>
+            <div class="outs">
+              <span class="o did"><svg class="ic"><use href="#i-disc"/></svg>原曲.mp3<svg class="ic"><use href="#i-check"/></svg></span>
+              <span class="o now"><svg class="ic"><use href="#i-mic-off"/></svg>伴奏.mp3<svg class="ic spin"><use href="#i-loader"/></svg></span>
+              <span class="o"><svg class="ic"><use href="#i-mic"/></svg>人聲.mp3<svg class="ic"><use href="#i-clock"/></svg></span>
+            </div>
+            <div class="bar"><i style="width:46%"></i></div>
+            <div class="pct"><span>46%</span><span>2:14 / ~4:40</span></div>
+          </div>
+
+          <div class="job wait">
+            <div class="jt"><span class="n">周杰倫 - 晴天</span><span class="st"><svg class="ic"><use href="#i-clock"/></svg>#1</span></div>
+            <div class="kv">
+              <svg class="ic"><use href="#i-link"/></svg><b><a href="https://youtu.be/DYptgVvk0Ok">youtu.be/DYptgVvk0Ok</a></b>
+              <svg class="ic"><use href="#i-title"/></svg><b>周杰倫 Jay Chou【晴天 Sunny Day】Official MV</b>
+            </div>
+            <div class="outs">
+              <span class="o"><svg class="ic"><use href="#i-disc"/></svg>原曲.mp3</span>
+              <span class="o"><svg class="ic"><use href="#i-mic-off"/></svg>伴奏.mp3</span>
+              <span class="o"><svg class="ic"><use href="#i-film"/></svg>.mp4 · 1080p</span>
+            </div>
+            <div class="acts"><button class="ibtn sm ghost" type="button" aria-label="取消" title="取消"><svg class="ic"><use href="#i-x"/></svg></button></div>
+          </div>
+
+          <div class="divider">已完成 <button class="ibtn sm ghost" type="button" aria-label="清除已完成" title="清除已完成"><svg class="ic"><use href="#i-trash"/></svg></button></div>
+
+          <div class="job done">
+            <div class="jt"><span class="n">Me at the zoo</span><span class="st"><svg class="ic"><use href="#i-checkc"/></svg>0:41</span></div>
+            <div class="kv">
+              <svg class="ic"><use href="#i-link"/></svg><b><a href="https://youtu.be/jNQXAC9IVRw">youtu.be/jNQXAC9IVRw</a></b>
+              <svg class="ic"><use href="#i-file"/></svg><b>Me at the zoo.mp4 · 1.2 MB</b>
+            </div>
+            <div class="outs"><span class="o did"><svg class="ic"><use href="#i-film"/></svg>.mp4<svg class="ic"><use href="#i-check"/></svg></span></div>
+            <div class="acts"><button class="ibtn sm" type="button" aria-label="顯示檔案" title="顯示檔案"><svg class="ic"><use href="#i-folder"/></svg></button></div>
+          </div>
+
+          <div class="job fail">
+            <div class="jt"><span class="n">私人影片測試</span><span class="st"><svg class="ic"><use href="#i-xc"/></svg>1/3 · 下載</span></div>
+            <div class="kv"><svg class="ic"><use href="#i-link"/></svg><b><a href="https://youtu.be/xxxxxxxxxxx">youtu.be/xxxxxxxxxxx</a></b></div>
+            <div class="outs"><span class="o bad"><svg class="ic"><use href="#i-disc"/></svg>原曲.mp3<svg class="ic"><use href="#i-x"/></svg></span></div>
+            <div class="err"><svg class="ic"><use href="#i-alert"/></svg>這部影片是私人影片，無法下載。</div>
+            <div class="acts">
+              <button class="ibtn sm ghost" type="button" aria-label="查看詳情" title="查看詳情"><svg class="ic"><use href="#i-eye"/></svg></button>
+              <button class="ibtn sm" type="button" aria-label="重試" title="重試"><svg class="ic"><use href="#i-retry"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-wrap">
+    <div class="frame phone">
+      <div class="frame-bar"><i></i><i></i><i></i><span>390px · 手機</span></div>
+      <div class="mock" id="mock-phone"></div>
+    </div>
+    <div class="phone-note">
+      <h2>手機寬度</h2>
+      <p>同一份 HTML，容器變窄時左右兩欄自動堆疊，輸入在上、排隊在下。頂部的四個統計數字在窄版隱藏，只留設定鈕。</p>
+      <p>所有圖示按鈕至少 28px、主要的 34px，滑鼠停留有文字提示，螢幕閱讀器讀到 aria-label。</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="eyebrow">資訊架構</div>
+    <h2>兩個大選項就夠了</h2>
+    <p>去人聲本來就是「先抓音檔再分離」，所以把它放進音檔底下最誠實。使用者的心智模型變成：我要音檔還是影片？要音檔的話要哪幾個版本？</p>
+<div class="tree">輸出
+├─ ☑ 音檔                      摘要：MP3 192k · 原曲 + 伴奏
+│   ├─ 版本（可多選，常駐顯示）  ☑ 原曲   ☑ 伴奏（去人聲）   ☐ 人聲
+│   └─ 細項（收合）
+│       ├─ 格式      MP3 · M4A · WAV · FLAC
+│       ├─ 位元率    128k · 192k · 320k
+│       └─ 分離模型  快速 htdemucs · 高品質 htdemucs_ft
+└─ ☐ 影片                      摘要：MP4 · 最佳畫質
+    └─ 畫質上限  最佳 · 1080p · 720p</div>
+    <ul>
+      <li>「版本」不收進細項，因為伴奏是最常用的功能，不能多點一層才找到。</li>
+      <li>選項卡標題右側的摘要文字，讓細項收合時也看得到目前設定。</li>
+      <li>分離模型只在勾了伴奏或人聲時才有意義，未勾時該列變灰。</li>
+      <li>細項的選擇記在設定裡，下次啟動沿用；「版本」每次都回到預設「原曲」，避免不小心多跑一次 8 分鐘的分離。</li>
+      <li>「開始」按鈕顯示會產生的檔案數：2 個網址 × 2 個版本 = 4 個檔案，讓使用者按之前心裡有數。</li>
+    </ul>
+
+    <div class="call">
+      <p><strong>一個網址一張卡片，裡面列出每個輸出檔。</strong></p>
+      <p>排隊卡片上的「輸出」列每個檔案一顆膠囊，右側小圖示是它自己的狀態：時鐘等待、轉圈處理中、勾完成、叉失敗。整張卡的進度條和步驟數字（2/3 · 分離）說的是目前進行的那一步。</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">圖示</div>
+    <h2>圖示對照</h2>
+    <p>全部取自 Lucide，24px 格、2px 線，內嵌成一個 SVG sprite 約 4 KB。所有只有圖示的按鈕都帶 aria-label 與 title。</p>
+    <div class="legend">
+      <table>
+        <thead><tr><th></th><th>意思</th><th>出現位置</th></tr></thead>
+        <tbody>
+          <tr><td><svg class="ic"><use href="#i-music"/></svg></td><td>音檔</td><td>輸出選項、卡片膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-film"/></svg></td><td>影片</td><td>輸出選項、卡片膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-disc"/></svg></td><td>原曲</td><td>版本、卡片膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-mic-off"/></svg></td><td>伴奏（去人聲）</td><td>版本、卡片膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-mic"/></svg></td><td>人聲</td><td>版本、卡片膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-sliders"/></svg></td><td>細項</td><td>選項卡底部</td></tr>
+          <tr><td><svg class="ic"><use href="#i-zap"/></svg> / <svg class="ic"><use href="#i-gem"/></svg></td><td>快速 / 高品質模型</td><td>分離模型</td></tr>
+          <tr><td><svg class="ic"><use href="#i-paste"/></svg></td><td>貼上剪貼簿</td><td>網址欄右上</td></tr>
+          <tr><td><svg class="ic"><use href="#i-play"/></svg></td><td>開始</td><td>主按鈕</td></tr>
+          <tr><td><svg class="ic"><use href="#i-clock"/></svg> <svg class="ic"><use href="#i-loader"/></svg> <svg class="ic"><use href="#i-checkc"/></svg> <svg class="ic"><use href="#i-xc"/></svg></td><td>排隊 / 處理中 / 完成 / 失敗</td><td>頂部統計、卡片狀態、膠囊</td></tr>
+          <tr><td><svg class="ic"><use href="#i-link"/></svg> <svg class="ic"><use href="#i-title"/></svg> <svg class="ic"><use href="#i-file"/></svg></td><td>來源網址 / 原標題 / 已存檔案</td><td>卡片細節列</td></tr>
+          <tr><td><svg class="ic"><use href="#i-folder"/></svg></td><td>顯示檔案</td><td>完成卡片</td></tr>
+          <tr><td><svg class="ic"><use href="#i-retry"/></svg> <svg class="ic"><use href="#i-eye"/></svg></td><td>重試 / 查看詳情</td><td>失敗卡片</td></tr>
+          <tr><td><svg class="ic"><use href="#i-x"/></svg> <svg class="ic"><use href="#i-trash"/></svg></td><td>取消 / 清除已完成</td><td>排隊卡片、已完成分隔線</td></tr>
+          <tr><td><svg class="ic"><use href="#i-gear"/></svg></td><td>設定</td><td>右上角</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:16px">保留文字的地方：選項名稱（音檔、影片、原曲、伴奏、人聲）、段落標題（網址、輸出、檔名）、錯誤訊息、「開始」。這些是使用者要讀的內容，不是操作符號。</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btns = document.querySelectorAll("[data-theme-pick]");
+  function apply(v) {
+    if (v === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", v);
+    btns.forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-theme-pick") === v)); });
+    try { localStorage.setItem("vs-console-theme", v); } catch (e) {}
+  }
+  btns.forEach(function (b) { b.addEventListener("click", function () { apply(b.getAttribute("data-theme-pick")); }); });
+  var saved = null;
+  try { saved = localStorage.getItem("vs-console-theme"); } catch (e) {}
+  if (saved === "light" || saved === "dark") apply(saved);
+
+  // Phone frame: clone the desktop mock, strip ids so the page stays valid.
+  var desk = document.getElementById("mock-desktop");
+  var phone = document.getElementById("mock-phone");
+  var clone = desk.firstElementChild.cloneNode(true);
+  clone.querySelectorAll("[id]").forEach(function (el) { el.removeAttribute("id"); });
+  clone.querySelectorAll("[name]").forEach(function (el) { el.setAttribute("name", "p-" + el.getAttribute("name")); });
+  phone.appendChild(clone);
+
+  function wire(scope) {
+    scope.querySelectorAll(".out-h input").forEach(function (cb) {
+      cb.addEventListener("change", function () { cb.closest(".out").classList.toggle("on", cb.checked); });
+    });
+    scope.querySelectorAll(".chip input").forEach(function (cb) {
+      cb.addEventListener("change", function () { cb.closest(".chip").classList.toggle("on", cb.checked); });
+    });
+    scope.querySelectorAll(".seg").forEach(function (seg) {
+      seg.querySelectorAll("label").forEach(function (l) {
+        l.addEventListener("click", function () {
+          seg.querySelectorAll("label").forEach(function (x) { x.classList.remove("on"); });
+          l.classList.add("on");
+        });
+      });
+    });
+  }
+  wire(desk); wire(phone);
+})();
+</script>
