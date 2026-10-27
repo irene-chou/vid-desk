@@ -69,7 +69,7 @@ def test_fonts_from_google_with_system_fallback():
     assert re.search(r'--mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas', HTML)
 
 def test_csrf_header_and_sse_present():
-    assert "X-Vid-Snatch" in HTML and "EventSource" in HTML and "prefers-color-scheme" in HTML
+    assert "X-Vid-Snatch" in HTML and "EventSource" in HTML
 
 def test_reduced_motion_respected():
     assert "prefers-reduced-motion: reduce" in HTML
@@ -97,6 +97,55 @@ def test_card_name_falls_back_to_display_name():
 
 def test_color_scheme_declared():
     assert re.search(r":root\s*\{\s*color-scheme: light dark;", HTML)
+
+def test_theme_tokens_defined_once_and_follow_color_scheme():
+    # #26：深淺色 token 只定義一份（light-dark()），由 color-scheme 決定取哪個；
+    # 沒有 data-theme 時 color-scheme: light dark 跟系統，選了淺 / 深色就固定 color-scheme
+    root = re.search(r":root\s*\{(.*?)\n  \}", HTML, re.S).group(1)
+    for token in ["--bg", "--panel", "--fg", "--muted", "--line", "--sub", "--accent", "--accent-fg", "--ok", "--bad", "--warn"]:
+        assert re.search(token + r": light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);", root), token
+    assert ':root[data-theme="light"] { color-scheme: light; }' in HTML
+    assert ':root[data-theme="dark"] { color-scheme: dark; }' in HTML
+    # 不再有 @media 版的深色 token（那會變成第二份定義）
+    assert "prefers-color-scheme" not in HTML
+    # 深色色票仍是 spec 的那組
+    assert "--bg: light-dark(#f5f6f8, #0f1114);" in HTML and "--accent: light-dark(#0f766e, #2dd4bf);" in HTML
+
+def test_theme_option_in_settings():
+    # 設定 modal 有「主題」三段式：跟隨系統 / 淺色 / 深色，沿用 .seg，radiogroup 以文字標籤為名
+    settings = re.search(r'<dialog id="settings".*?</dialog>', HTML, re.S).group(0)
+    row = re.search(r'<div class="kvline theme"><span class="k" id="lbl-theme">主題</span>\s*'
+                    r'<div class="seg" role="radiogroup" aria-labelledby="lbl-theme">(.*?)</div></div>', settings, re.S)
+    assert row, "設定裡要有主題列"
+    assert re.findall(r'<label><input type="radio" name="theme" value="(\w+)">([^<]+)</label>', row.group(1)) == [
+        ("system", "跟隨系統"), ("light", "淺色"), ("dark", "深色"),
+    ]
+    # 主題列在「進階」之前
+    assert settings.index('id="lbl-theme"') < settings.index("<summary>進階")
+    # 鍵盤：沿用 .seg 的隱藏 radio，focus 時 label 外框可見
+    assert ".seg label:has(input:focus-visible) { outline: 2px solid var(--accent);" in HTML
+    # 切換即時套用、寫 localStorage、畫回分段控制
+    assert re.search(r"function onThemeChange\(event\)\s*\{\s*const theme = parseTheme\(event\.target\.value\);\s*"
+                     r"applyTheme\(document\.documentElement, theme\);\s*writeTheme\(\(\) => localStorage, theme\);\s*renderTheme\(theme\);", HTML)
+    assert "for (const input of document.querySelectorAll('input[name=\"theme\"]')) input.addEventListener(\"change\", onThemeChange);" in HTML
+    assert "renderTheme(currentTheme());" in HTML
+    # 主題不走後端設定
+    assert '"theme"' not in re.search(r"SETTING_KEYS = \{[^}]*\}", HTML).group(0)
+
+def test_theme_applied_in_head_before_first_paint():
+    # <head> 裡的 inline script 在樣式表之前就把 data-theme 設好，開頁不閃錯的主題
+    head = re.search(r"<head>(.*?)</head>", HTML, re.S).group(1)
+    script = re.search(r"<script>(.*?)</script>", head, re.S)
+    assert script, "head 裡要有早期套用腳本"
+    assert head.index("<script>") < head.index('<link rel="stylesheet"') < head.index("<style>")
+    body = script.group(1)
+    assert "// @@theme-begin" in body and "// @@theme-end" in body
+    assert 'const THEME_KEY = "vid-snatch.theme";' in body
+    assert "applyTheme(document.documentElement, readTheme(() => localStorage));" in body
+    # 讀寫都包 try，localStorage 不可用時當跟隨系統
+    assert re.search(r"function readTheme\(getStorage\)\s*\{\s*try \{ return parseTheme\(getStorage\(\)\.getItem\(THEME_KEY\)\); \} catch \(e\) \{ return \"system\"; \}", body)
+    assert re.search(r"function writeTheme\(getStorage, theme\)\s*\{\s*try \{", body)
+    assert re.search(r'if \(theme === "system"\) root\.removeAttribute\("data-theme"\); else root\.setAttribute\("data-theme", theme\);', body)
 
 def test_network_errors_become_chinese_message():
     assert HTML.count('throw new Error("發生錯誤")') >= 2
@@ -177,7 +226,7 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
-@pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs"])
+@pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):
     node = shutil.which("node")
     if not node:

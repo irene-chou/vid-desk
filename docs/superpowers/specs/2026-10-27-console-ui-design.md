@@ -40,7 +40,7 @@
 
 - 桌面：雙欄 grid（5:6），左欄輸入面板，右欄排隊。手機（容器 ≤ 760px）堆疊，輸入在上。
 - 頂部：左側 logo + 名稱 + 版本號（`v0.3.1`，等寬小字、`--muted` 色，來自 `GET /api/settings` 的 `version`；取不到就不顯示）；右側設定圖示鈕。#25 之後不再有四個狀態計數，排隊卡片本身已足夠。
-- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束；「進階」收合：更新、解除安裝，狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
+- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束；「主題」三段式（沿用 `.seg`）：跟隨系統（預設）/ 淺色 / 深色，切換即時生效、存 `localStorage`（key `vid-snatch.theme`，不經後端，#26）；「進階」收合：更新、解除安裝，狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
 - 左欄由上到下：網址（textarea，右上貼上鈕）、輸出（兩張選項卡）、檔名（每個網址一列，上方小字為網址）、開始。
 - 右欄：「進行中與排隊」區；「已完成」分隔線（右側清除鈕）；卡片依新到舊。
 
@@ -69,6 +69,7 @@
 - 字體：IBM Plex Sans（UI）、IBM Plex Mono（網址、檔名、數字、狀態）、中文 Noto Sans TC；皆由 Google Fonts 載入，離線退回 `-apple-system, "PingFang TC", "Microsoft JhengHei"` 與 `ui-monospace, Menlo, Consolas`。
 - 淺色：bg #f5f6f8、panel #ffffff、fg #16181d、muted #6b7280、line #e2e4e9、sub #eef0f3、accent #0f766e（字 #ffffff）、ok #15803d、bad #b91c1c、warn #b45309。
 - 深色：bg #0f1114、panel #171a1f、fg #e6e8ec、muted #8b919c、line #262a31、sub #1f232a、accent #2dd4bf（字 #06201c）、ok #4ade80、bad #f87171、warn #fbbf24。
+- 深淺切換（#26）：每個色票 token 只定義一份 `--x: light-dark(淺, 深)`，由 `color-scheme` 決定取哪個。`:root { color-scheme: light dark }` 跟隨系統；設定裡選淺 / 深色時 `<html data-theme="light|dark">` 把 `color-scheme` 固定成 `light` / `dark`，原生表單、捲軸、dialog backdrop 跟著變。`<head>` 最前面的 inline script 在第一次繪製前就從 `localStorage` 讀回並設好 `data-theme`，開頁不閃色；讀不到（沒存、值不合法、`localStorage` 不可用）就當跟隨系統，`data-theme` 不設。
 - 圓角：面板 12px、選項卡 10px、按鈕 8px、膠囊 999px。圖示鈕 34px，小型 28px。
 - 圖示：Lucide，24 格 2px 線，內嵌一個 `<svg><symbol>` sprite（mockup 內已含全部 symbol，可直接複製）。
 - 動畫：轉圈 1s linear；`prefers-reduced-motion` 時停止。
