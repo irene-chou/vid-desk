@@ -1,0 +1,150 @@
+name: rollback
+
+# 手動回滾：把指定舊版重新設為 latest。使用者端只看 latest（Windows 啟動器查 releases/latest 的 tag_name、
+# 舊版啟動器查 git 標籤 latest、Mac 拉 ghcr.io/…:latest），所以三個 latest 都指回舊版，下次開啟就會自動退回。
+# 之後再推新的 v* 標籤，release.yml / publish.yml 會照常把三個 latest 移到新版，不受回滾影響。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要回滾到的版本（例如 0.3.0 或 v0.3.0）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+# 與 release.yml 共用同一個群組，避免回滾與發版同時改 latest
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 正規化版本號
+        id: version
+        env:
+          RAW: ${{ inputs.version }}
+        run: |
+          raw=$(printf '%s' "$RAW" | tr -d '[:space:]')
+          if [[ ! "$raw" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version「$RAW」格式不對，請輸入 X.Y.Z 或 vX.Y.Z"
+            exit 1
+          fi
+          version="${raw#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "回滾目標：v$version（GHCR 標籤 $version）"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 三樣東西都確認存在才往下走；任何一樣不在就失敗，什麼都不改
+      - name: 驗證 release、git 標籤與 GHCR 映像檔都存在
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! commit=$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}"); then
+            echo "::error::git 標籤 $TAG 不存在"
+            exit 1
+          fi
+          if ! release=$(gh release view "$TAG" --json tagName,isDraft,isPrerelease); then
+            echo "::error::release $TAG 不存在"
+            exit 1
+          fi
+          if [ "$(jq -r '.isDraft or .isPrerelease' <<< "$release")" = "true" ]; then
+            echo "::error::release $TAG 是草稿或預先發布，不能設為 latest"
+            exit 1
+          fi
+          if ! manifest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}'); then
+            echo "::error::GHCR 映像檔 $IMAGE:$VERSION 不存在"
+            exit 1
+          fi
+          digest=$(jq -r '.digest' <<< "$manifest")
+          archs=$(jq -r '[.manifests[]? | select(.platform.architecture != "unknown") | .platform.architecture] | sort | join(",")' <<< "$manifest")
+          if [ "$archs" != "amd64,arm64" ]; then
+            echo "::error::$IMAGE:$VERSION 不是 amd64+arm64 的多架構 manifest（看到：${archs:-無}）"
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "git $TAG → $commit"
+          echo "GHCR $IMAGE:$VERSION → $digest（$archs）"
+
+      - name: 把 release 設為 latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --prerelease=false --latest
+
+      # 與 release.yml 相同：舊版 windows/launcher.ps1 查 git 標籤 latest 指到的 commit
+      - name: 移動 latest 標籤（舊版啟動器用）
+        env:
+          COMMIT: ${{ steps.check.outputs.commit }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "$COMMIT"
+          git push -f origin latest
+
+      # 與 release.yml 相同：只刪名為 latest 的 release 物件、保留 git 標籤 latest
+      - name: 清掉舊的 latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view latest > /dev/null 2>&1; then
+            gh release delete latest --yes
+          fi
+
+      # imagetools create 只有一個來源時會把整個 manifest list（amd64 + arm64）原樣掛上新標籤，digest 不變
+      - name: 把 GHCR latest 指回該版
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:$VERSION"
+
+      - name: 確認三個 latest 都指到該版並寫入 summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ steps.check.outputs.commit }}
+          DIGEST: ${{ steps.check.outputs.digest }}
+        run: |
+          release_latest=$(gh release view --json tagName --jq .tagName)
+          git_latest=$(git ls-remote origin refs/tags/latest | cut -f1)
+          latest_digest=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | jq -r '.digest')
+          if [ "$latest_digest" = "$DIGEST" ]; then same="是"; else same="否"; fi
+          {
+            echo "## 回滾到 $TAG"
+            echo
+            echo "| 項目 | 現在指到 | 預期 |"
+            echo "| --- | --- | --- |"
+            echo "| GitHub latest release | $release_latest | $TAG |"
+            echo "| git 標籤 latest | $git_latest | $COMMIT |"
+            echo "| GHCR latest digest | $latest_digest | $DIGEST（$IMAGE:$VERSION） |"
+            echo
+            echo "GHCR latest 與 $VERSION 的 digest 相同：$same"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ok=1
+          [ "$release_latest" = "$TAG" ] || { echo "::error::latest release 是 $release_latest，預期 $TAG"; ok=; }
+          [ "$git_latest" = "$COMMIT" ] || { echo "::error::git 標籤 latest 指到 $git_latest，預期 $COMMIT"; ok=; }
+          [ "$same" = "是" ] || { echo "::error::GHCR latest digest 是 $latest_digest，預期 $DIGEST"; ok=; }
+          [ -n "$ok" ]

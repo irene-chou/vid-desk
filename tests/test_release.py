@@ -99,3 +99,102 @@ def test_main_script_commit_contract_accepts_tag_or_sha():
     src = MAIN_SCRIPT.read_bytes().decode("utf-8-sig")
     assert "40 碼 commit sha" in src and "release 標籤名稱" in src
     assert "[string]$Commit = 'local'" in src
+
+
+# ---- 回滾（issue #33）：rollback.yml 把指定舊版重新設為 latest ----
+
+def rollback_steps():
+    data, _ = load_workflow("rollback.yml")
+    return data, data["jobs"]["rollback"]["steps"]
+
+
+def test_rollback_is_manual_only_with_version_input_and_minimal_permissions():
+    data, on = load_workflow("rollback.yml")
+    assert list(on) == ["workflow_dispatch"]
+    version = on["workflow_dispatch"]["inputs"]["version"]
+    assert version["required"] is True and version["type"] == "string"
+    assert data["permissions"] == {"contents": "write", "packages": "write"}
+    # 與 release.yml 共用 concurrency 群組，回滾與發版不會同時改 latest
+    assert data["concurrency"]["group"] == load_workflow("release.yml")[0]["concurrency"]["group"]
+
+
+def test_rollback_version_regex_accepts_x_y_z_with_or_without_v():
+    _, steps = rollback_steps()
+    script = next(s for s in steps if s.get("id") == "version")["run"]
+    pattern = re.search(r"=~ (\^v\?.+?\$) \]\]", script).group(1)
+    assert pattern == r"^v?[0-9]+\.[0-9]+\.[0-9]+$"
+    for ok in ["0.3.0", "v0.3.0", "10.20.30"]:
+        assert re.fullmatch(pattern, ok), ok
+    for bad in ["0.3", "latest", "v0.3.0-rc1", "main", "0.3.0.1", "V0.3.0", "b650caa", ""]:
+        assert not re.fullmatch(pattern, bad), bad
+    # 去掉前綴 v 後以 X.Y.Z 當 GHCR 標籤、vX.Y.Z 當 release / git 標籤
+    assert 'version="${raw#v}"' in script
+    assert 'echo "tag=v$version"' in script
+
+
+def test_rollback_validates_everything_before_touching_any_latest():
+    _, steps = rollback_steps()
+    check = next(i for i, s in enumerate(steps) if s.get("id") == "check")
+    check_script = steps[check]["run"]
+    # 驗證三樣都存在：git 標籤、release（非草稿／預先發布）、GHCR 多架構映像檔
+    assert 'git rev-parse --verify --quiet "refs/tags/$TAG^{commit}"' in check_script
+    assert 'gh release view "$TAG" --json tagName,isDraft,isPrerelease' in check_script
+    assert 'docker buildx imagetools inspect "$IMAGE:$VERSION"' in check_script
+    assert '"$archs" != "amd64,arm64"' in check_script
+    # 驗證之前的步驟都不能改東西
+    for s in steps[: check + 1]:
+        run = s.get("run", "")
+        for mutating in ["gh release edit", "gh release delete", "git push", "imagetools create"]:
+            assert mutating not in run, (s.get("name"), mutating)
+    # 三個 latest 的順序：release → git 標籤 → 清掉舊 latest release → GHCR → 確認
+    after = "\n".join(s.get("run", "") for s in steps[check + 1 :])
+    order = [
+        after.index('gh release edit "$TAG" --draft=false --prerelease=false --latest'),
+        after.index('git tag -f latest "$COMMIT"'),
+        after.index("git push -f origin latest"),
+        after.index("gh release delete latest --yes"),
+        after.index('docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:$VERSION"'),
+        after.index("$GITHUB_STEP_SUMMARY"),
+    ]
+    assert order == sorted(order)
+
+
+def test_rollback_summary_reports_three_latests_and_fails_on_mismatch():
+    _, steps = rollback_steps()
+    script = steps[-1]["run"]
+    assert "gh release view --json tagName --jq .tagName" in script
+    assert "git ls-remote origin refs/tags/latest" in script
+    assert 'docker buildx imagetools inspect "$IMAGE:latest"' in script
+    for expected in ['"$release_latest" = "$TAG"', '"$git_latest" = "$COMMIT"', '"$latest_digest" = "$DIGEST"']:
+        assert expected in script
+    assert '[ -n "$ok" ]' in script
+
+
+def test_rollback_uses_same_pinned_actions_as_release_and_publish():
+    _, steps = rollback_steps()
+    used = {s["uses"] for s in steps if "uses" in s}
+    allowed = set()
+    for name in ["release.yml", "publish.yml"]:
+        data, _ = load_workflow(name)
+        for job in data["jobs"].values():
+            allowed |= {s["uses"] for s in job["steps"] if "uses" in s}
+    assert used <= allowed, used - allowed
+    assert {"actions/checkout@v4", "docker/setup-buildx-action@v3", "docker/login-action@v3"} <= used
+
+
+def test_next_release_still_moves_latest_regardless_of_rollback():
+    # release.yml / publish.yml 不看現在 latest 指到哪，直接以 --latest、-f、type=raw 覆蓋，回滾後再發版不會卡住
+    data, _ = load_workflow("release.yml")
+    scripts = "\n".join(step.get("run", "") for step in data["jobs"]["package"]["steps"])
+    assert 'gh release edit "$TAG" --draft=false --prerelease=false --latest' in scripts
+    assert "git push -f origin latest" in scripts
+    data, _ = load_workflow("publish.yml")
+    meta = next(s for s in data["jobs"]["merge"]["steps"] if s.get("id") == "meta")
+    assert "type=raw,value=latest" in meta["with"]["tags"].split()
+    assert "latest=false" in meta["with"]["flavor"]
+
+
+def test_readme_documents_rollback():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "rollback.yml" in readme
+    assert "gh workflow run rollback.yml -f version=" in readme
