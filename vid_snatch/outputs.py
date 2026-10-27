@@ -31,7 +31,7 @@ class Backend(Protocol):
     def convert_audio(self, src, dst, audio_format, bitrate=192) -> Path: ...
     def download_video(self, url, output_dir, filename, on_progress=None, *,
                        overwrite=False, max_height=None) -> Path: ...
-    def remove_vocals(self, audio_path, output_dir, on_progress=None, *,
+    def separate(self, audio_path, output_dir, on_progress=None, *,
                       model=DEMUCS_MODEL, stems=("instrumental",), audio_format="mp3", bitrate=192) -> dict[str, Path]: ...
     def update_ytdlp(self, timeout=30) -> bool: ...
 
@@ -228,7 +228,7 @@ def execute(options: OutputOptions, url: str, output_dir: Path, name: str, backe
                 next_step()  # 分離
                 for stem in options.stems:
                     hooks.on_output(stem, "running", None)
-                stems = backend.remove_vocals(src, output_dir, hooks.on_progress, model=audio.model,
+                stems = backend.separate(src, output_dir, hooks.on_progress, model=audio.model,
                                               stems=options.stems, audio_format=audio.format, bitrate=audio.bitrate)
                 for stem in options.stems:
                     done(stem, stems[stem])

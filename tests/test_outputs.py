@@ -47,3 +47,13 @@ def test_m4a_stems_use_mp3():
 def test_constants():
     assert VERSIONS == ("original", "instrumental", "vocals")
     assert KINDS == ("original", "instrumental", "vocals", "video")
+
+
+def test_core_and_fake_backend_provide_every_pipeline_call():
+    # 流程呼叫的名稱若改了，真實的 core 與測試用的 FakeBackend 都要跟上
+    from tests.test_jobs import FakeBackend
+    from vid_snatch import core
+
+    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate", "update_ytdlp"):
+        assert callable(getattr(core, name)), name
+        assert callable(getattr(FakeBackend(), name)), name

@@ -215,7 +215,7 @@ def stem_format(audio_format: str) -> str:
     return audio_format if audio_format in STEM_FORMATS else "mp3"
 
 
-def remove_vocals(
+def separate(
     audio_path: Path,
     output_dir: Path,
     on_progress: ProgressCallback | None = None,
@@ -265,3 +265,17 @@ def remove_vocals(
     finally:
         safe_path.rename(audio_path)
     return targets
+
+
+def remove_vocals(
+    audio_path: Path,
+    output_dir: Path,
+    on_progress: ProgressCallback | None = None,
+    *,
+    model: str = DEMUCS_MODEL,
+    audio_format: str = "mp3",
+    bitrate: int = 192,
+) -> Path:
+    """只要伴奏時的簡化介面（windows/ci-smoke.ps1 等舊呼叫端用）：回傳 _no_vocals 檔路徑。"""
+    return separate(audio_path, output_dir, on_progress, model=model, stems=("instrumental",),
+                    audio_format=audio_format, bitrate=bitrate)["instrumental"]

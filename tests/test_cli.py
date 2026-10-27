@@ -31,7 +31,7 @@ def test_run_three_modes_use_shared_pipeline(monkeypatch, tmp_path, capsys, flag
     from vid_snatch import cli
 
     backend = FakeBackend()
-    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "remove_vocals"):
+    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
         monkeypatch.setattr(cli.core, name, getattr(backend, name))
     monkeypatch.setattr("builtins.input", lambda prompt="": "song")
     args = build_parser().parse_args(["https://youtu.be/a", "-o", str(tmp_path), *flags])
@@ -47,7 +47,7 @@ def test_run_avoids_overwriting_existing_outputs(monkeypatch, tmp_path):
     from vid_snatch import cli
 
     backend = FakeBackend()
-    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "remove_vocals"):
+    for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
         monkeypatch.setattr(cli.core, name, getattr(backend, name))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
     (tmp_path / "Same Title_no_vocals.mp3").write_bytes(b"old")

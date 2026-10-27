@@ -41,7 +41,7 @@ jobs:
           import math, struct, sys, time, wave
           from pathlib import Path
 
-          from vid_snatch.core import remove_vocals
+          from vid_snatch.core import separate
           from vid_snatch.models import DEMUCS_MODELS
 
           work = Path(sys.argv[1])
@@ -65,10 +65,10 @@ jobs:
               out_dir = work / model
               out_dir.mkdir()
               start = time.monotonic()
-              outs = remove_vocals(src, out_dir, model=model, stems=("instrumental", "vocals"))
+              outs = separate(src, out_dir, model=model, stems=("instrumental", "vocals"))
               for stem, path in outs.items():
                   size = path.stat().st_size if path.exists() else -1
-                  print(f"remove_vocals[{model}] {stem}: {path} ({size} bytes, {time.monotonic() - start:.1f} s)")
+                  print(f"separate[{model}] {stem}: {path} ({size} bytes, {time.monotonic() - start:.1f} s)")
                   failed |= size <= 0
           sys.exit(2 if failed else 0)
           EOF

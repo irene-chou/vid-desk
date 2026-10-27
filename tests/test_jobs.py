@@ -33,8 +33,8 @@ class FakeBackend:
         on_progress and on_progress(None)
         on_progress and on_progress(None)  # 影片 + 音訊兩個檔案各一次 finished
         p = output_dir / f"{filename}.mp4"; p.write_bytes(b"x"); return p
-    def remove_vocals(self, audio_path, output_dir, on_progress=None, *, model="htdemucs_ft", stems=("instrumental",), audio_format="mp3", bitrate=192):
-        self.calls.append(("remove_vocals", model, tuple(stems), audio_format, bitrate))
+    def separate(self, audio_path, output_dir, on_progress=None, *, model="htdemucs_ft", stems=("instrumental",), audio_format="mp3", bitrate=192):
+        self.calls.append(("separate", model, tuple(stems), audio_format, bitrate))
         on_progress and on_progress(50.0)
         fmt = audio_format if audio_format in ("mp3", "wav", "flac") else "mp3"
         out = {}
@@ -171,10 +171,10 @@ def test_all_versions_download_once_and_separate_once(q, tmp_path):
     run_until_idle(q)
     assert job.state == "done"
     kinds = [c[0] for c in q.backend.calls]
-    assert kinds == ["download_audio", "convert_audio", "remove_vocals"]
+    assert kinds == ["download_audio", "convert_audio", "separate"]
     assert q.backend.calls[0] == ("download_audio", "wav", 320)
     assert q.backend.calls[1] == ("convert_audio", "mp3", 320)
-    assert q.backend.calls[2] == ("remove_vocals", "htdemucs_ft", ("instrumental", "vocals"), "mp3", 320)
+    assert q.backend.calls[2] == ("separate", "htdemucs_ft", ("instrumental", "vocals"), "mp3", 320)
     # 版本依固定順序排列，各自有結果路徑與大小
     assert [o.kind for o in job.outputs] == ["original", "instrumental", "vocals"]
     assert [o.state for o in job.outputs] == ["done"] * 3
@@ -186,7 +186,7 @@ def test_all_versions_download_once_and_separate_once(q, tmp_path):
 def test_original_wav_with_separation_keeps_wav(q, tmp_path):
     job = q.add("https://youtu.be/a", {"audio": {"versions": ["original", "instrumental"], "format": "wav"}}, filename="song")
     run_until_idle(q)
-    assert [c[0] for c in q.backend.calls] == ["download_audio", "remove_vocals"]
+    assert [c[0] for c in q.backend.calls] == ["download_audio", "separate"]
     assert (tmp_path / "song.wav").exists()
     assert [o.filename for o in job.outputs] == ["song.wav", "song_no_vocals.wav"]
 
@@ -217,7 +217,7 @@ def test_video_only_steps(q):
 
 def test_failure_marks_unfinished_outputs_failed_and_keeps_step(q, tmp_path):
     class Broken(FakeBackend):
-        def remove_vocals(self, *a, **k):
+        def separate(self, *a, **k):
             raise RuntimeError("boom")
     q.backend = Broken()
     job = q.add("https://youtu.be/a", AUDIO_ALL, filename="song")

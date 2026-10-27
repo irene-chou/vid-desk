@@ -197,11 +197,11 @@ def fake_demucs(monkeypatch):
     return saved
 
 
-def test_remove_vocals_writes_both_stems_in_one_pass(fake_demucs, tmp_path):
+def test_separate_writes_both_stems_in_one_pass(fake_demucs, tmp_path):
     src = tmp_path / "測試 歌曲.wav"
     src.write_bytes(b"wav")
     seen = []
-    out = core.remove_vocals(src, tmp_path, seen.append, model="htdemucs", stems=("instrumental", "vocals"),
+    out = core.separate(src, tmp_path, seen.append, model="htdemucs", stems=("instrumental", "vocals"),
                              audio_format="flac", bitrate=320)
     assert FakeSeparator.created == ["htdemucs"]
     assert out == {"instrumental": tmp_path / "測試 歌曲_no_vocals.flac", "vocals": tmp_path / "測試 歌曲_vocals.flac"}
@@ -211,27 +211,35 @@ def test_remove_vocals_writes_both_stems_in_one_pass(fake_demucs, tmp_path):
     assert not any(p.name.endswith(".wav") and p != src for p in tmp_path.iterdir())
 
 
-def test_remove_vocals_defaults_and_m4a_fallback(fake_demucs, tmp_path):
+def test_separate_defaults_and_m4a_fallback(fake_demucs, tmp_path):
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
-    out = core.remove_vocals(src, tmp_path)
+    out = core.separate(src, tmp_path)
     assert FakeSeparator.created == ["htdemucs_ft"] and list(out) == ["instrumental"]
     assert out["instrumental"] == tmp_path / "s_no_vocals.mp3" and fake_demucs[0][2] == 192
-    out = core.remove_vocals(src, tmp_path, stems=("vocals",), audio_format="m4a")
+    out = core.separate(src, tmp_path, stems=("vocals",), audio_format="m4a")
     assert out["vocals"] == tmp_path / "s_vocals.mp3"
 
 
-def test_remove_vocals_restores_source_on_failure(fake_demucs, tmp_path, monkeypatch):
+def test_separate_restores_source_on_failure(fake_demucs, tmp_path, monkeypatch):
     monkeypatch.setattr(FakeSeparator, "separate_audio_file", lambda self, p: (_ for _ in ()).throw(RuntimeError("timed out")))
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
     with pytest.raises(VidSnatchError) as ei:
-        core.remove_vocals(src, tmp_path)
+        core.separate(src, tmp_path)
     assert ei.value.kind == "network" and src.exists()
 
 
-def test_remove_vocals_rejects_unknown_model_or_stem(fake_demucs, tmp_path):
+def test_separate_rejects_unknown_model_or_stem(fake_demucs, tmp_path):
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
     with pytest.raises(ValueError):
-        core.remove_vocals(src, tmp_path, model="mdx")
+        core.separate(src, tmp_path, model="mdx")
     with pytest.raises(ValueError):
-        core.remove_vocals(src, tmp_path, stems=("drums",))
+        core.separate(src, tmp_path, stems=("drums",))
     assert src.exists()
+
+
+def test_remove_vocals_is_instrumental_only_shortcut(fake_demucs, tmp_path):
+    # windows/ci-smoke.ps1 以 remove_vocals(src, work) 呼叫並對回傳值用 .exists()
+    src = tmp_path / "s.wav"; src.write_bytes(b"wav")
+    out = core.remove_vocals(src, tmp_path)
+    assert isinstance(out, Path) and out == tmp_path / "s_no_vocals.mp3" and out.exists()
+    assert FakeSeparator.created == ["htdemucs_ft"] and src.exists()
