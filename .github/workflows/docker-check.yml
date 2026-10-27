@@ -1,0 +1,91 @@
+name: Docker check
+
+# publish.yml 只在 main 上建置；這裡在 PR 先確認映像檔能建、能離線去人聲、網頁伺服器能啟動（不推送）
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: vid-snatch:ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (linux/amd64, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.IMAGE }}
+          # 與 publish.yml 共用同一個快取範圍
+          cache-from: type=gha,scope=linux/amd64
+          cache-to: type=gha,mode=max,scope=linux/amd64
+
+      - name: CLI --help
+        run: docker run --rm "$IMAGE" --help
+
+      - name: Remove vocals offline (synthetic 2 s WAV)
+        run: |
+          work="$RUNNER_TEMP/vocal"
+          mkdir -p "$work"
+          cat > "$work/check.py" <<'EOF'
+          import math, struct, sys, time, wave
+          from pathlib import Path
+
+          from vid_snatch.core import remove_vocals
+
+          work = Path(sys.argv[1])
+          src = work / "測試 歌曲.wav"
+          rate = 44100
+          with wave.open(str(src), "wb") as w:
+              w.setnchannels(2)
+              w.setsampwidth(2)
+              w.setframerate(rate)
+              frames = bytearray()
+              for i in range(rate * 2):
+                  t = i / rate
+                  left = 0.3 * math.sin(2 * math.pi * 220 * t) + 0.2 * math.sin(2 * math.pi * 440 * t)
+                  right = 0.3 * math.sin(2 * math.pi * 220 * t) + 0.2 * math.sin(2 * math.pi * 330 * t)
+                  frames += struct.pack("<hh", int(left * 32767), int(right * 32767))
+              w.writeframes(bytes(frames))
+
+          start = time.monotonic()
+          out = remove_vocals(src, work)
+          size = out.stat().st_size if out.exists() else -1
+          print(f"remove_vocals: {out} ({size} bytes, {time.monotonic() - start:.1f} s)")
+          sys.exit(0 if size > 0 else 2)
+          EOF
+          # --network none：證明模型已預載、執行時不需要網路
+          docker run --rm --network none -v "$work:/work" --entrypoint python "$IMAGE" /work/check.py /work
+          ls -l "$work"
+          f=$(find "$work" -name '*_no_vocals.mp3' -size +0c | head -n 1)
+          if [ -z "$f" ]; then echo "::error::沒有產生非空的 _no_vocals.mp3"; exit 1; fi
+          echo "OK: $f"
+
+      - name: Web server health
+        run: |
+          docker run -d --name vs-web -p 127.0.0.1:8080:8080 "$IMAGE" --web --port 8080
+          ok=
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          echo
+          if [ -z "$ok" ]; then
+            echo "::error::/api/health 60 秒內沒有回應"
+            docker logs vs-web
+            docker rm -f vs-web
+            exit 1
+          fi
+          docker stop -t 10 vs-web
+          docker logs vs-web
+          docker rm vs-web
