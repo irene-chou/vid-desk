@@ -114,6 +114,10 @@ vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上
 **下載失敗，顯示「YouTube 改版」？**
 vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上方出現「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。」，就關掉終端機視窗、稍後再雙擊 `vid-snatch-Mac.command`（啟動時會自動更新到最新版）。
 
+## 支持這個專案
+
+vid-snatch 免費開放使用。覺得好用、想支持後續維護的話，歡迎[請我喝杯咖啡 ☕](https://ko-fi.com/zephyrinn)。
+
 ## 進階（工程師）
 
 ### Docker 指令列

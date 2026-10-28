@@ -278,6 +278,17 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
+def test_settings_has_kofi_link():
+    # #41：設定視窗底部放一個不顯眼的贊助連結，新分頁開啟；主畫面不放
+    dialog = re.search(r'<dialog id="settings"(.*?)</dialog>', HTML, re.S).group(1)
+    link = re.search(r'<a class="kofi"[^>]*>請我喝杯咖啡 ☕</a>', dialog).group(0)
+    assert 'href="https://ko-fi.com/zephyrinn"' in link and 'target="_blank"' in link
+    assert "noopener" in re.search(r'rel="([^"]*)"', link).group(1).split()
+    assert HTML.count("ko-fi.com") == 1  # 只在設定視窗；主畫面與腳本都不放
+    assert ".settings .kofi { justify-self: end; font-size: 0.74rem; color: var(--muted); text-decoration: none; }" in HTML
+    assert ".settings .kofi:hover { color: var(--accent); text-decoration: underline; }" in HTML
+    assert "YouTube 下載" not in dialog
+
 @pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):
     node = shutil.which("node")

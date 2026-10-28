@@ -235,6 +235,9 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .settings details .row { margin-top: 8px; }
   /* 「進階」底下的狀態訊息與按鈕列分開（#20） */
   .settings details .notice { margin-top: 8px; }
+  /* 設定視窗底部的贊助連結（#41）：小字、--muted 色，不搶戲；hover 才變 accent */
+  .settings .kofi { justify-self: end; font-size: 0.74rem; color: var(--muted); text-decoration: none; }
+  .settings .kofi:hover { color: var(--accent); text-decoration: underline; }
 
   /* ===== 對話框 ===== */
   dialog { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--fg); max-width: min(420px, calc(100vw - 32px)); padding: 20px; font-family: var(--sans); }
@@ -389,6 +392,7 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     </div>
     <div id="advanced-notice" class="notice" hidden></div>
   </details>
+  <a class="kofi" href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener">請我喝杯咖啡 ☕</a>
 </dialog>
 
 <dialog id="ask">
