@@ -278,16 +278,42 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
-def test_settings_has_kofi_link():
-    # #41：設定視窗底部放一個不顯眼的贊助連結，新分頁開啟；主畫面不放
+def test_header_actions_github_kofi_theme_settings_borderless():
+    # #43：GitHub 與 Ko-fi 兩顆 icon 連結放進頁首右上角，跟主題切換、齒輪同一組；順序 GitHub、咖啡、主題、齒輪
     dialog = re.search(r'<dialog id="settings"(.*?)</dialog>', HTML, re.S).group(1)
-    link = re.search(r'<a class="kofi"[^>]*>請我喝杯咖啡 ☕</a>', dialog).group(0)
-    assert 'href="https://ko-fi.com/zephyrinn"' in link and 'target="_blank"' in link
-    assert "noopener" in re.search(r'rel="([^"]*)"', link).group(1).split()
-    assert HTML.count("ko-fi.com") == 1  # 只在設定視窗；主畫面與腳本都不放
-    assert ".settings .kofi { justify-self: end; font-size: 0.74rem; color: var(--muted); text-decoration: none; }" in HTML
-    assert ".settings .kofi:hover { color: var(--accent); text-decoration: underline; }" in HTML
-    assert "YouTube 下載" not in dialog
+    assert "ko-fi" not in dialog and 'class="kofi"' not in HTML and ".settings .kofi" not in HTML
+    assert "<footer" not in HTML and ".ftr" not in HTML and "Made by Irene" not in HTML
+    header = re.search(r'<header class="hdr">(.*?)</header>', HTML, re.S).group(1)
+    actions = re.search(r'<div class="actions">(.*?)</div>', header, re.S).group(1)
+    items = re.findall(r'<(a|button) ([^>]*)>', actions)
+    attrs = [dict(re.findall(r'([\w-]+)="([^"]*)"', a)) for _, a in items]
+    assert [(tag, a["id"]) for (tag, _), a in zip(items, attrs)] == [
+        ("a", "github-link"), ("a", "kofi-link"), ("button", "theme-toggle"), ("button", "settings-toggle")]
+    assert all("ibtn" in a["class"].split() and a["aria-label"] and a["title"] for a in attrs)
+    assert [(a["href"], a["aria-label"], a["title"]) for a in attrs[:2]] == [
+        ("https://github.com/irene-chou/vid-snatch", "GitHub", "GitHub"),
+        ("https://ko-fi.com/zephyrinn", "請我喝杯咖啡", "請我喝杯咖啡"),
+    ]
+    for a in attrs[:2]:
+        assert a["target"] == "_blank" and "noopener" in a["rel"].split()
+    assert re.findall(r'<use href="#(i-[\w-]+)"', actions)[:2] == ["i-github", "i-coffee"]
+    assert '<symbol id="i-github" viewBox="0 0 16 16" fill="currentColor" stroke="none">' in HTML
+    assert '<symbol id="i-coffee" viewBox="0 0 24 24">' in HTML
+    assert HTML.count("ko-fi.com") == 1  # 只在頁首
+    # 頁首這組無外框、無底色，hover / focus-visible / 設定開啟中有回饋；規則只掛在 .hdr .actions 底下
+    assert ".hdr .actions .ibtn { border-color: transparent; background: transparent; color: var(--muted); text-decoration: none; }" in HTML
+    assert (".hdr .actions .ibtn:hover, .hdr .actions .ibtn:focus-visible, .hdr .actions .ibtn[aria-expanded=\"true\"] "
+            "{ border-color: transparent; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }") in HTML
+    assert ":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }" in HTML  # 鍵盤 focus 外框仍看得到
+    # 其他 .ibtn（剪貼簿、卡片按鈕、對話框關閉）維持原樣：基本規則與 ghost / hover 規則不變
+    assert ".ibtn { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: var(--r-btn); width: 34px; height: 34px;" in HTML
+    assert ".ibtn.ghost { border-color: transparent; background: transparent; color: var(--muted); }" in HTML
+    assert ".ibtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }" in HTML
+    assert not re.search(r"\n  \.ibtn[^{]*\{[^}]*border(-color)?: (0|none|transparent)", HTML.replace(".ibtn.ghost", "").replace(".hdr .actions .ibtn", ""))
+    # 版面回到原本：無 sticky-footer 的 body flex 與 .app 寬度改動
+    assert "body { display: flex" not in HTML
+    assert ".app {\n    max-width: 1100px; margin: 0 auto;\n    padding: 16px max(16px, env(safe-area-inset-right, 0px)) 48px" in HTML
+    assert "position: fixed" not in HTML and "position: sticky" not in HTML
 
 @pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):

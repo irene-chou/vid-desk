@@ -113,8 +113,11 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .brand h1 { font: inherit; margin: 0; }
   .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
   .brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }
-  /* 頁首右側：主題切換（#37）與設定兩顆 icon 按鈕 */
-  .hdr .actions { display: flex; align-items: center; gap: 8px; }
+  /* 頁首右側（#37 / #43）：GitHub、Ko-fi、主題切換、設定四顆 icon 按鈕同一組，只留 icon 不帶外框與底色；
+     hover / 鍵盤 focus / 設定開啟中以淡 accent 底色與 accent icon 回饋，尺寸與點擊區維持 34px。其他 .ibtn 不受影響 */
+  .hdr .actions { display: flex; align-items: center; gap: 4px; }
+  .hdr .actions .ibtn { border-color: transparent; background: transparent; color: var(--muted); text-decoration: none; }
+  .hdr .actions .ibtn:hover, .hdr .actions .ibtn:focus-visible, .hdr .actions .ibtn[aria-expanded="true"] { border-color: transparent; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   /* 頁面層級提示（#31）：任一工作自動更新下載工具後仍失敗時，顯示在頁首下方、輸入區上方，跨兩欄；沒有按鈕 */
   .banner { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: var(--r-card); font-size: 0.88rem; color: var(--fg); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); }
   .banner .ic { color: var(--warn); margin-top: 0.25em; }
@@ -235,9 +238,6 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .settings details .row { margin-top: 8px; }
   /* 「進階」底下的狀態訊息與按鈕列分開（#20） */
   .settings details .notice { margin-top: 8px; }
-  /* 設定視窗底部的贊助連結（#41）：小字、--muted 色，不搶戲；hover 才變 accent */
-  .settings .kofi { justify-self: end; font-size: 0.74rem; color: var(--muted); text-decoration: none; }
-  .settings .kofi:hover { color: var(--accent); text-decoration: underline; }
 
   /* ===== 對話框 ===== */
   dialog { border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--panel); color: var(--fg); max-width: min(420px, calc(100vw - 32px)); padding: 20px; font-family: var(--sans); }
@@ -286,12 +286,17 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+  <!-- GitHub mark（Octicons，MIT）：實心，蓋掉 .ic 的 fill: none -->
+  <symbol id="i-github" viewBox="0 0 16 16" fill="currentColor" stroke="none"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/></symbol>
 </svg>
 
 <div class="app">
   <header class="hdr">
     <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>
     <div class="actions">
+      <a id="github-link" class="ibtn" href="https://github.com/irene-chou/vid-snatch" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg class="ic"><use href="#i-github"/></svg></a>
+      <a id="kofi-link" class="ibtn" href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener" aria-label="請我喝杯咖啡" title="請我喝杯咖啡"><svg class="ic"><use href="#i-coffee"/></svg></a>
       <button id="theme-toggle" class="ibtn" type="button" aria-label="切換主題" title="切換主題"><svg class="ic"><use id="theme-icon" href="#i-moon"/></svg></button>
       <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
     </div>
@@ -392,7 +397,6 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     </div>
     <div id="advanced-notice" class="notice" hidden></div>
   </details>
-  <a class="kofi" href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener">請我喝杯咖啡 ☕</a>
 </dialog>
 
 <dialog id="ask">
