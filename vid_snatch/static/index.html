@@ -82,6 +82,8 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
      （Chrome 對 html 的 scrollbar-gutter 在 overflow: hidden 時不保留，所以不能放在 html） */
   html { height: 100%; overflow: hidden; }
   body { height: 100%; overflow-y: auto; scrollbar-gutter: stable; }
+  /* sticky footer（#43）：body 是 flex column，.app 不伸縮、.ftr 以 margin-top: auto 貼齊底部；內容超過一屏時自然排在最後 */
+  body { display: flex; flex-direction: column; }
   body {
     background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -101,18 +103,14 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
 
   /* ===== 版面 ===== */
   .app {
-    max-width: 1100px; margin: 0 auto;
-    padding: 16px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
+    width: 100%; max-width: 1132px; margin: 0 auto; flex: none;
+    padding: 16px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
     display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start;
   }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; gap: 16px; }
   }
   .hdr { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-  /* 頁尾（#43）：跟頁首對稱的一條細線，置中小字 --muted；跟著內容排在最後，不浮動 */
-  .ftr { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid var(--line); text-align: center; font-size: 0.74rem; color: var(--muted); display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 8px; }
-  .ftr a { color: inherit; text-decoration: none; }
-  .ftr a:hover { color: var(--accent); text-decoration: underline; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
   .brand h1 { font: inherit; margin: 0; }
   .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
@@ -134,6 +132,9 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .ibtn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
   .ibtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .ibtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  /* 頁尾（#43）：GitHub 與 Ko-fi 兩顆小 ghost icon 按鈕靠右下，寬度與邊距跟 .app 對齊；不 fixed，不擋工作卡片 */
+  .ftr { width: 100%; max-width: 1132px; margin: auto auto 0; flex: none; display: flex; justify-content: flex-end; gap: 4px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); }
+  .ftr a.ibtn { text-decoration: none; }
 
   /* ===== 面板與欄位 ===== */
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 16px; display: grid; gap: 14px; align-content: start; min-width: 0; }
@@ -287,6 +288,9 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+  <!-- GitHub mark（Octicons，MIT）：實心，蓋掉 .ic 的 fill: none -->
+  <symbol id="i-github" viewBox="0 0 16 16" fill="currentColor" stroke="none"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/></symbol>
 </svg>
 
 <div class="app">
@@ -376,13 +380,12 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     <div class="divider" id="done-divider" hidden>已完成 <button id="clear-done" class="ibtn sm ghost" type="button" aria-label="清除已完成" title="清除已完成"><svg class="ic"><use href="#i-trash"/></svg></button></div>
     <ul id="jobs-done" aria-label="已完成"></ul>
   </section>
-
-  <footer class="ftr">
-    <span>Made by Irene</span><span aria-hidden="true">·</span>
-    <a href="https://github.com/irene-chou/vid-snatch" target="_blank" rel="noopener">GitHub</a><span aria-hidden="true">·</span>
-    <a href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener">☕ 請我喝杯咖啡</a>
-  </footer>
 </div>
+
+<footer class="ftr">
+  <a class="ibtn sm ghost" href="https://github.com/irene-chou/vid-snatch" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg class="ic"><use href="#i-github"/></svg></a>
+  <a class="ibtn sm ghost" href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener" aria-label="請我喝杯咖啡" title="請我喝杯咖啡"><svg class="ic"><use href="#i-coffee"/></svg></a>
+</footer>
 
 <dialog id="settings" class="settings" aria-label="設定">
   <div class="lbl">設定<button id="settings-close" class="ibtn sm ghost" type="button" aria-label="關閉" title="關閉"><svg class="ic"><use href="#i-x"/></svg></button></div>

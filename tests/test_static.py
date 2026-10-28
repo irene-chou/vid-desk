@@ -278,26 +278,32 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
-def test_footer_has_github_and_kofi_links():
-    # #43：Ko-fi 從設定視窗搬到主頁面 footer；置中小字 --muted，兩個連結新分頁開啟、hover 才變 accent
+def test_footer_has_github_and_kofi_icon_buttons():
+    # #43：Ko-fi 從設定視窗搬到頁尾；兩顆 ghost icon 按鈕（GitHub、Ko-fi）靠右下，新分頁開啟，hover 走 .ibtn 的回饋
     dialog = re.search(r'<dialog id="settings"(.*?)</dialog>', HTML, re.S).group(1)
     assert "ko-fi" not in dialog and 'class="kofi"' not in HTML and ".settings .kofi" not in HTML
     footer = re.search(r'<footer class="ftr">(.*?)</footer>', HTML, re.S).group(1)
-    assert HTML.index("<footer") > HTML.index('id="jobs-done"')  # 排在內容之後
-    assert re.sub(r"<[^>]+>", " ", footer).split() == ["Made", "by", "Irene", "·", "GitHub", "·", "☕", "請我喝杯咖啡"]
-    links = re.findall(r'<a ([^>]*)>([^<]*)</a>', footer)
-    assert [(dict(re.findall(r'(\w+)="([^"]*)"', attrs))["href"], text) for attrs, text in links] == [
-        ("https://github.com/irene-chou/vid-snatch", "GitHub"),
-        ("https://ko-fi.com/zephyrinn", "☕ 請我喝杯咖啡"),
+    assert "</div>\n\n<footer" in HTML and HTML.index("<footer") > HTML.index('id="jobs-done"')  # .app 之後
+    assert "Made by Irene" not in HTML and "請我喝杯咖啡 ☕" not in HTML and "·" not in footer
+    links = re.findall(r'<a ([^>]*)>(.*?)</a>', footer, re.S)
+    attrs = [dict(re.findall(r'([\w-]+)="([^"]*)"', a)) for a, _ in links]
+    assert [(a["href"], a["aria-label"], a["title"]) for a in attrs] == [
+        ("https://github.com/irene-chou/vid-snatch", "GitHub", "GitHub"),
+        ("https://ko-fi.com/zephyrinn", "請我喝杯咖啡", "請我喝杯咖啡"),
     ]
-    for attrs, _ in links:
-        a = dict(re.findall(r'(\w+)="([^"]*)"', attrs))
-        assert a["target"] == "_blank" and "noopener" in a["rel"].split()
-    assert HTML.count("ko-fi.com") == 1  # 只在 footer
-    assert ".ftr { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid var(--line); text-align: center; font-size: 0.74rem; color: var(--muted);" in HTML
-    assert ".ftr a { color: inherit; text-decoration: none; }" in HTML
-    assert ".ftr a:hover { color: var(--accent); text-decoration: underline; }" in HTML
-    assert not re.search(r"\.ftr\s*\{[^}]*position:", HTML)  # 不 fixed/sticky
+    for a in attrs:
+        assert a["class"] == "ibtn sm ghost" and a["target"] == "_blank" and "noopener" in a["rel"].split()
+    assert [re.search(r'href="#(i-[\w-]+)"', body).group(1) for _, body in links] == ["i-github", "i-coffee"]
+    assert '<symbol id="i-github" viewBox="0 0 16 16" fill="currentColor" stroke="none">' in HTML
+    assert '<symbol id="i-coffee" viewBox="0 0 24 24">' in HTML
+    assert HTML.count("ko-fi.com") == 1  # 只在頁尾
+    # sticky footer：body flex column、.ftr margin-top: auto 貼底；不用 position: fixed / sticky 浮在內容上
+    assert "body { display: flex; flex-direction: column; }" in HTML
+    ftr_css = re.search(r"\.ftr \{([^}]*)\}", HTML).group(1)
+    assert "margin: auto auto 0;" in ftr_css and "justify-content: flex-end;" in ftr_css and "position:" not in ftr_css
+    assert ".app {\n    width: 100%; max-width: 1132px; margin: 0 auto; flex: none;" in HTML
+    assert ".ftr a.ibtn { text-decoration: none; }" in HTML
+    assert "position: fixed" not in HTML and "position: sticky" not in HTML
 
 @pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):
