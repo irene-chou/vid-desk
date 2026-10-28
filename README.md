@@ -174,6 +174,17 @@ GitHub Actions 會：
 
 平常推送到 `main` 不會發版，使用者端也不會更新。
 
+### 出問題時怎麼回滾
+
+新版有問題時，到 Actions 手動跑 `rollback.yml`（或用 gh），輸入要退回的版本：
+
+```bash
+gh workflow run rollback.yml -f version=0.3.0   # 0.3.0 或 v0.3.0 皆可
+gh run watch                                      # 結尾的 job summary 會列出三個 latest 現在指到哪
+```
+
+它會先確認該版的 release、git 標籤與 GHCR 映像檔（amd64 + arm64）都存在，缺一就失敗、什麼都不改；接著依序把 release 設為 latest（Windows 啟動器）、把 git 標籤 `latest` 移到該版的 commit（舊版 Windows 啟動器）、把 GHCR `latest` 重新指到該版的 digest（Mac），最後核對三者都指到該版。使用者下次開啟就會自動退回該版；之後再推新的 `v*` 標籤，`release.yml` / `publish.yml` 會照常把 latest 移到新版。
+
 ### 預建映像檔
 
 ```bash
