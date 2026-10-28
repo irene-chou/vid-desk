@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vid-snatch</title>
 <script>
-// ===== 主題（#26）：在第一次繪製前就套好 data-theme，開頁不閃色 =====
+// ===== 主題（#26 / #37）：在第一次繪製前就套好 data-theme，開頁不閃色 =====
 // 純函式區塊由 tests/theme.test.mjs 以 node 直接測；下面主程式也沿用這幾個函式
 // @@theme-begin
 const THEME_KEY = "vid-snatch.theme";
 const THEMES = ["system", "light", "dark"];
 
-// 存值不在清單內（包含 null）一律當「跟隨系統」
+// 存值不在清單內（包含 null）一律當「跟隨系統」；#26 存過的 "system" 也視為跟隨系統（#37 之後只會存 light / dark）
 function parseTheme(value) {
   return THEMES.includes(value) ? value : "system";
+}
+
+// 實際顯示的主題：跟隨系統時看系統是否為深色
+function resolveTheme(theme, systemDark) {
+  if (theme === "system") return systemDark ? "dark" : "light";
+  return theme;
+}
+
+// 點頁首按鈕後要切到的主題：與目前實際顯示相反
+function nextTheme(effective) {
+  return effective === "dark" ? "light" : "dark";
 }
 
 // localStorage 可能整個不可用（隱私模式、停用 cookie），getStorage 與 getItem 都包在 try 裡
@@ -49,7 +60,7 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
     --r-panel: 12px; --r-card: 10px; --r-btn: 8px;
   }
-  /* 主題（#26）：沒有 data-theme 就跟隨系統；設定裡選了淺 / 深色就固定。
+  /* 主題（#26 / #37）：沒有 data-theme 就跟隨系統；按過頁首的切換鈕就固定 light / dark。
      深色 token 下面有兩份（系統深色且沒選淺色、明確選深色），改色票時兩處必須同步，tests/test_static.py 會比對。
      color-scheme 一起切，原生表單、捲軸、dialog backdrop 才會跟著變 */
   :root[data-theme="light"] { color-scheme: light; }
@@ -102,6 +113,8 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   .brand h1 { font: inherit; margin: 0; }
   .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 15px; }
   .brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }
+  /* 頁首右側：主題切換（#37）與設定兩顆 icon 按鈕 */
+  .hdr .actions { display: flex; align-items: center; gap: 8px; }
   /* 頁面層級提示（#31）：任一工作自動更新下載工具後仍失敗時，顯示在頁首下方、輸入區上方，跨兩欄；沒有按鈕 */
   .banner { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: var(--r-card); font-size: 0.88rem; color: var(--fg); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); }
   .banner .ic { color: var(--warn); margin-top: 0.25em; }
@@ -217,8 +230,6 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   /* ===== 設定 ===== */
   .kvline { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; font-size: 0.85rem; }
   .kvline .k { color: var(--muted); font-size: 0.74rem; }
-  /* 主題列放分段控制，和標籤垂直置中而不是對齊 baseline（#26） */
-  .kvline.theme { align-items: center; }
   #output-dir { overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.8rem; }
   .settings details > summary { font-size: 0.8rem; }
   .settings details .row { margin-top: 8px; }
@@ -270,12 +281,17 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
 </svg>
 
 <div class="app">
   <header class="hdr">
     <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>
-    <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <div class="actions">
+      <button id="theme-toggle" class="ibtn" type="button" aria-label="切換主題" title="切換主題"><svg class="ic"><use id="theme-icon" href="#i-moon"/></svg></button>
+      <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
+    </div>
   </header>
 
   <div id="update-failed" class="banner" role="status" hidden><svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。</span></div>
@@ -366,12 +382,6 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
     <button id="pick-folder" type="button">更換資料夾</button>
     <button id="shutdown" type="button">結束 vid-snatch</button>
   </div>
-  <div class="kvline theme"><span class="k" id="lbl-theme">主題</span>
-    <div class="seg" role="radiogroup" aria-labelledby="lbl-theme">
-      <label><input type="radio" name="theme" value="system">跟隨系統</label>
-      <label><input type="radio" name="theme" value="light">淺色</label>
-      <label><input type="radio" name="theme" value="dark">深色</label>
-    </div></div>
   <details>
     <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
     <div class="row">
@@ -1196,24 +1206,33 @@ function showVersion(version) {
   ver.hidden = false;
 }
 
-// 主題：目前生效的值以 <html data-theme> 為準（head 的早期套用腳本已從 localStorage 讀過）
+// 主題（#37）：目前設定值以 <html data-theme> 為準（head 的早期套用腳本已從 localStorage 讀過），沒有就是跟隨系統
+const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
 function currentTheme() {
   return parseTheme(document.documentElement.getAttribute("data-theme") || "system");
 }
 
-function renderTheme(theme) {
-  checkRadio("theme", theme);
-  for (const input of document.querySelectorAll('input[name="theme"]')) {
-    input.closest("label").classList.toggle("on", input.checked);
-  }
+function effectiveTheme() {
+  return resolveTheme(currentTheme(), systemDarkQuery.matches);
 }
 
-// 切換即時生效、存進 localStorage（純個人偏好，不經後端）；存不進去就只在這次分頁生效
-function onThemeChange(event) {
-  const theme = parseTheme(event.target.value);
+// 頁首按鈕：圖示與標籤都是「點了會切到的主題」——淺色時畫月亮「切換為深色」，深色時畫太陽「切換為淺色」
+function renderThemeToggle() {
+  const next = nextTheme(effectiveTheme());
+  const label = next === "dark" ? "切換為深色" : "切換為淺色";
+  const btn = $("theme-toggle");
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  $("theme-icon").setAttribute("href", next === "dark" ? "#i-moon" : "#i-sun");
+}
+
+// 點一下切到與目前實際顯示相反的主題並固定下來、存進 localStorage（純個人偏好，不經後端）；存不進去就只在這次分頁生效
+function toggleTheme() {
+  const theme = nextTheme(effectiveTheme());
   applyTheme(document.documentElement, theme);
   writeTheme(() => localStorage, theme);
-  renderTheme(theme);
+  renderThemeToggle();
 }
 
 async function loadSettings() {
@@ -1296,13 +1315,15 @@ $("settings-toggle").addEventListener("click", openSettings);
 $("settings-close").addEventListener("click", () => $("settings").close());
 $("settings").addEventListener("click", onSettingsBackdropClick);
 $("settings").addEventListener("close", onSettingsClosed);
-for (const input of document.querySelectorAll('input[name="theme"]')) input.addEventListener("change", onThemeChange);
+$("theme-toggle").addEventListener("click", toggleTheme);
+// 跟隨系統時系統切換深淺，CSS 會自己跟著變，這裡只要把按鈕圖示更新
+systemDarkQuery.addEventListener("change", renderThemeToggle);
 $("pick-folder").addEventListener("click", pickFolder);
 $("shutdown").addEventListener("click", shutdown);
 $("uninstall").addEventListener("click", uninstall);
 $("clear-done").addEventListener("click", clearDone);
 
-renderTheme(currentTheme());
+renderThemeToggle();
 renderOutputs();
 loadSettings();
 loadJobs();

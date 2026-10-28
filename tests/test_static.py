@@ -16,12 +16,12 @@ def test_required_ids_present():
         assert f'id="{i}"' in HTML, i
 
 def test_header_shows_version_without_stats():
-    # #25：頁首只剩 logo + 名稱 + 版本（左）與齒輪（右）；四個狀態統計與 updateStats / jobsById 一併移除
+    # #25：頁首只剩 logo + 名稱 + 版本（左）與右側的 icon 按鈕（#37 之後是主題切換 + 齒輪）；四個狀態統計與 updateStats / jobsById 一併移除
     for needle in ("stat-queued", "stat-running", "stat-done", "stat-failed", 'id="stats"', "updateStats", "jobsById", ".stat {", ".hdr .stat"):
         assert needle not in HTML, needle
     header = re.search(r'<header class="hdr">(.*?)</header>', HTML, re.S).group(1)
     assert re.search(r'<div class="brand">.*<h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>', header)
-    assert header.count("<button") == 1 and 'id="settings-toggle"' in header
+    assert header.count("<button") == 2 and 'id="settings-toggle"' in header and 'id="theme-toggle"' in header
     # 版本號：名稱右側等寬小字、--muted 色；載入設定時填入，取不到就維持隱藏
     assert ".brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }" in HTML
     assert "showVersion(data.version);" in HTML
@@ -153,26 +153,34 @@ def test_dark_tokens_both_selectors_in_sync():
     assert ':root[data-theme="light"] { color-scheme: light; }' in HTML
     assert "light-dark(" not in HTML
 
-def test_theme_option_in_settings():
-    # 設定 modal 有「主題」三段式：跟隨系統 / 淺色 / 深色，沿用 .seg，radiogroup 以文字標籤為名
-    settings = re.search(r'<dialog id="settings".*?</dialog>', HTML, re.S).group(0)
-    row = re.search(r'<div class="kvline theme"><span class="k" id="lbl-theme">主題</span>\s*'
-                    r'<div class="seg" role="radiogroup" aria-labelledby="lbl-theme">(.*?)</div></div>', settings, re.S)
-    assert row, "設定裡要有主題列"
-    assert re.findall(r'<label><input type="radio" name="theme" value="(\w+)">([^<]+)</label>', row.group(1)) == [
-        ("system", "跟隨系統"), ("light", "淺色"), ("dark", "深色"),
-    ]
-    # 主題列在「進階」之前
-    assert settings.index('id="lbl-theme"') < settings.index("<summary>進階")
-    # 鍵盤：沿用 .seg 的隱藏 radio，focus 時 label 外框可見
-    assert ".seg label:has(input:focus-visible) { outline: 2px solid var(--accent);" in HTML
-    # 切換即時套用、寫 localStorage、畫回分段控制
-    assert re.search(r"function onThemeChange\(event\)\s*\{\s*const theme = parseTheme\(event\.target\.value\);\s*"
-                     r"applyTheme\(document\.documentElement, theme\);\s*writeTheme\(\(\) => localStorage, theme\);\s*renderTheme\(theme\);", HTML)
-    assert "for (const input of document.querySelectorAll('input[name=\"theme\"]')) input.addEventListener(\"change\", onThemeChange);" in HTML
-    assert "renderTheme(currentTheme());" in HTML
+def test_theme_toggle_button_in_header():
+    # #37：頁首右側、設定齒輪左邊有一顆 .ibtn 主題切換鈕；sprite 有太陽 / 月亮
+    header = re.search(r'<header class="hdr">(.*?)</header>', HTML, re.S).group(1)
+    btn = re.search(r'<button id="theme-toggle" class="ibtn" type="button" aria-label="([^"]+)" title="([^"]+)">'
+                    r'<svg class="ic"><use id="theme-icon" href="#i-moon"/></svg></button>', header)
+    assert btn and btn.group(1) == btn.group(2)
+    assert header.index('id="theme-toggle"') < header.index('id="settings-toggle"')
+    assert '<symbol id="i-sun" viewBox="0 0 24 24">' in HTML and '<symbol id="i-moon" viewBox="0 0 24 24">' in HTML
+    # 圖示與 aria-label / title 都是「點了會切到的主題」：淺色時月亮「切換為深色」，深色時太陽「切換為淺色」
+    assert re.search(r'const label = next === "dark" \? "切換為深色" : "切換為淺色";\s*const btn = \$\("theme-toggle"\);\s*'
+                     r'btn\.setAttribute\("aria-label", label\);\s*btn\.title = label;\s*'
+                     r'\$\("theme-icon"\)\.setAttribute\("href", next === "dark" \? "#i-moon" : "#i-sun"\);', HTML)
+    # 點擊：切到與實際顯示相反的主題、固定、存 localStorage、更新圖示
+    assert re.search(r"function toggleTheme\(\)\s*\{\s*const theme = nextTheme\(effectiveTheme\(\)\);\s*"
+                     r"applyTheme\(document\.documentElement, theme\);\s*writeTheme\(\(\) => localStorage, theme\);\s*renderThemeToggle\(\);", HTML)
+    assert '$("theme-toggle").addEventListener("click", toggleTheme);' in HTML
+    # 跟隨系統時系統切換深淺，圖示即時跟著變
+    assert 'const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");' in HTML
+    assert 'systemDarkQuery.addEventListener("change", renderThemeToggle);' in HTML
+    assert "renderThemeToggle();" in HTML
     # 主題不走後端設定
     assert '"theme"' not in re.search(r"SETTING_KEYS = \{[^}]*\}", HTML).group(0)
+
+def test_no_theme_option_in_settings():
+    # #37：設定 modal 裡沒有主題選項了（#26 的三段式已移除）
+    settings = re.search(r'<dialog id="settings".*?</dialog>', HTML, re.S).group(0)
+    assert "主題" not in settings and 'name="theme"' not in settings and "lbl-theme" not in settings
+    assert "renderTheme(" not in HTML and "onThemeChange" not in HTML
 
 def test_theme_applied_in_head_before_first_paint():
     # <head> 裡的 inline script 在樣式表之前就把 data-theme 設好，開頁不閃錯的主題
@@ -188,6 +196,8 @@ def test_theme_applied_in_head_before_first_paint():
     assert re.search(r"function readTheme\(getStorage\)\s*\{\s*try \{ return parseTheme\(getStorage\(\)\.getItem\(THEME_KEY\)\); \} catch \(e\) \{ return \"system\"; \}", body)
     assert re.search(r"function writeTheme\(getStorage, theme\)\s*\{\s*try \{", body)
     assert re.search(r'if \(theme === "system"\) root\.removeAttribute\("data-theme"\); else root\.setAttribute\("data-theme", theme\);', body)
+    # #37 的純函式也在同一區塊，node 測試從這裡抽
+    assert "function resolveTheme(theme, systemDark)" in body and "function nextTheme(effective)" in body
 
 def test_network_errors_become_chinese_message():
     assert HTML.count('throw new Error("發生錯誤")') >= 2
