@@ -278,16 +278,26 @@ def test_clear_done_hides_in_frontend_only():
     assert "if (clearedIds.has(job.id)) return;" in HTML
     assert not re.search(r'deleteJson\(`/api/jobs/\$\{id\}`\)', HTML)
 
-def test_settings_has_kofi_link():
-    # #41：設定視窗底部放一個不顯眼的贊助連結，新分頁開啟；主畫面不放
+def test_footer_has_github_and_kofi_links():
+    # #43：Ko-fi 從設定視窗搬到主頁面 footer；置中小字 --muted，兩個連結新分頁開啟、hover 才變 accent
     dialog = re.search(r'<dialog id="settings"(.*?)</dialog>', HTML, re.S).group(1)
-    link = re.search(r'<a class="kofi"[^>]*>請我喝杯咖啡 ☕</a>', dialog).group(0)
-    assert 'href="https://ko-fi.com/zephyrinn"' in link and 'target="_blank"' in link
-    assert "noopener" in re.search(r'rel="([^"]*)"', link).group(1).split()
-    assert HTML.count("ko-fi.com") == 1  # 只在設定視窗；主畫面與腳本都不放
-    assert ".settings .kofi { justify-self: end; font-size: 0.74rem; color: var(--muted); text-decoration: none; }" in HTML
-    assert ".settings .kofi:hover { color: var(--accent); text-decoration: underline; }" in HTML
-    assert "YouTube 下載" not in dialog
+    assert "ko-fi" not in dialog and 'class="kofi"' not in HTML and ".settings .kofi" not in HTML
+    footer = re.search(r'<footer class="ftr">(.*?)</footer>', HTML, re.S).group(1)
+    assert HTML.index("<footer") > HTML.index('id="jobs-done"')  # 排在內容之後
+    assert re.sub(r"<[^>]+>", " ", footer).split() == ["Made", "by", "Irene", "·", "GitHub", "·", "☕", "請我喝杯咖啡"]
+    links = re.findall(r'<a ([^>]*)>([^<]*)</a>', footer)
+    assert [(dict(re.findall(r'(\w+)="([^"]*)"', attrs))["href"], text) for attrs, text in links] == [
+        ("https://github.com/irene-chou/vid-snatch", "GitHub"),
+        ("https://ko-fi.com/zephyrinn", "☕ 請我喝杯咖啡"),
+    ]
+    for attrs, _ in links:
+        a = dict(re.findall(r'(\w+)="([^"]*)"', attrs))
+        assert a["target"] == "_blank" and "noopener" in a["rel"].split()
+    assert HTML.count("ko-fi.com") == 1  # 只在 footer
+    assert ".ftr { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid var(--line); text-align: center; font-size: 0.74rem; color: var(--muted);" in HTML
+    assert ".ftr a { color: inherit; text-decoration: none; }" in HTML
+    assert ".ftr a:hover { color: var(--accent); text-decoration: underline; }" in HTML
+    assert not re.search(r"\.ftr\s*\{[^}]*position:", HTML)  # 不 fixed/sticky
 
 @pytest.mark.parametrize("script", ["outputs_state.test.mjs", "queue_cards.test.mjs", "theme.test.mjs"])
 def test_pure_functions_in_node(script):
