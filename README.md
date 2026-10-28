@@ -103,7 +103,7 @@ vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上
 按右上角的「設定」（齒輪）→「更換資料夾」。下次啟動才會生效。
 
 **怎麼更新？**
-每次啟動都會自動檢查有沒有新版本，有的話自動換上，不用手動更新。
+每次啟動都會先花幾秒檢查有沒有新版本：沒有就直接開始；有的話會顯示下載進度（第一次或大改版可能要幾分鐘），下載完自動換上。沒有網路時會用目前的版本啟動。
 
 **怎麼移除？**
 按右上角的「設定」（齒輪）→「進階」→「解除安裝」，再選要不要一併刪除下載檔案。會刪除 vid-snatch 的 Docker 映像檔和設定檔。選刪除下載檔案時，只有預設的資料夾會被刪；改過儲存位置的話，請自己刪除。最後再刪掉你解壓縮的 vid-snatch 資料夾即可。不再需要 Docker 的話，可以另外移除 Docker Desktop。
@@ -112,7 +112,7 @@ vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上
 回到終端機視窗按 Enter，瀏覽器會重新打開。
 
 **下載失敗，顯示「YouTube 改版」？**
-vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上方出現「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。」，就關掉終端機視窗、稍後再雙擊 `vid-snatch-Mac.command`（每次啟動都會拉最新版）。
+vid-snatch 會自動更新下載工具再試一次，不用處理。若頁面上方出現「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。」，就關掉終端機視窗、稍後再雙擊 `vid-snatch-Mac.command`（啟動時會自動更新到最新版）。
 
 ## 進階（工程師）
 
@@ -190,3 +190,7 @@ gh run watch                                      # 結尾的 job summary 會列
 ```bash
 docker pull ghcr.io/irene-chou/vid-snatch:latest   # 或 :0.3.0
 ```
+
+`vid-snatch-Mac.command` 啟動時先用 `docker buildx imagetools inspect`（Docker Desktop 內建）取得 GHCR `:latest` 的 digest，與本機映像檔的 `RepoDigests` 比對：相同就直接啟動，不同才 `docker pull`（進度顯示在終端機）；15 秒內查不到（離線）就用本機既有的映像檔啟動。
+
+Dockerfile 把 `pyproject.toml` 與 `vid_snatch/` 放在相依套件層與模型層之後才 COPY，只改程式碼或版本號時只有最上面幾層（約 1 MB）會變，使用者更新不必重抓約 670 MB；`tests/test_dockerfile.py` 鎖住這個順序。

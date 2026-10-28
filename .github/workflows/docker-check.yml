@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Windows runner 沒有可靠的 bash：Mac 啟動腳本的更新檢查邏輯（假 docker 指令）在這裡跑
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Mac launcher update check (bash, fake docker)
+        run: |
+          pip install pytest
+          pytest -q -W error --noconftest tests/test_mac_command.py
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Build (linux/amd64, no push)

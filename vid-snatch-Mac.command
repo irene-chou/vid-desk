@@ -62,26 +62,105 @@ ensure_docker() {
     fi
 }
 
-ensure_image() {
-    echo "正在檢查更新…"
-    local want
-    case "$(uname -m)" in
-        arm64) want="arm64" ;;
-        x86_64) want="amd64" ;;
-        *) want="$(uname -m)" ;;
-    esac
+# macOS 沒有 timeout 指令：在限定秒數內執行指令，逾時就砍掉並回傳 124
+run_with_timeout() {
+    local secs="$1" pid ticks=0
+    shift
+    "$@" &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        if [ "$ticks" -ge $((secs * 5)) ]; then
+            kill "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            return 124
+        fi
+        sleep 0.2
+        ticks=$((ticks + 1))
+    done
+    wait "$pid"
+}
 
-    if docker pull "$IMAGE_REMOTE" > /dev/null 2>&1 \
-        && [ "$(docker image inspect --format '{{.Architecture}}' "$IMAGE_REMOTE" 2>/dev/null)" = "$want" ]; then
-        docker tag "$IMAGE_REMOTE" "$IMAGE_LOCAL"
-    elif ! docker image inspect "$IMAGE_LOCAL" &> /dev/null; then
+want_arch() {
+    case "$(uname -m)" in
+        arm64) echo "arm64" ;;
+        x86_64) echo "amd64" ;;
+        *) uname -m ;;
+    esac
+}
+
+# 只問 registry 遠端 :latest 現在指到哪些 digest（manifest list 與各平台 manifest），不下載映像檔。
+# 用 buildx imagetools（Docker Desktop 內建，不須登入），逐行抓 sha256，不依賴輸出格式或 jq。
+remote_digests() {
+    local out
+    out="$(run_with_timeout 15 docker buildx imagetools inspect "$IMAGE_REMOTE" 2>/dev/null)" || return 1
+    out="$(printf '%s\n' "$out" | grep -oE 'sha256:[0-9a-f]{64}' | sort -u)"
+    [ -n "$out" ] && printf '%s\n' "$out"
+}
+
+# 本機映像檔是從哪個 digest 拉下來的（本機自行 build 的沒有 RepoDigests → 空字串）
+local_digests() {
+    docker image inspect --format '{{range .RepoDigests}}{{.}} {{end}}' "$IMAGE_LOCAL" 2>/dev/null
+}
+
+# 0 = 已是最新版；1 = 有新版；2 = 離線或無法比對
+image_up_to_date() {
+    local remote local_ d
+    remote="$(remote_digests)" || return 2
+    local_="$(local_digests)" || return 1
+    for d in $remote; do
+        case " $local_" in *"@$d "*) return 0 ;; esac
+    done
+    return 1
+}
+
+# 下載遠端映像檔並確認架構相符，進度直接顯示在終端機
+pull_image() {
+    docker pull "$IMAGE_REMOTE" \
+        && [ "$(docker image inspect --format '{{.Architecture}}' "$IMAGE_REMOTE" 2>/dev/null)" = "$(want_arch)" ] \
+        && docker tag "$IMAGE_REMOTE" "$IMAGE_LOCAL"
+}
+
+ensure_image() {
+    if ! docker image inspect "$IMAGE_LOCAL" &> /dev/null; then
         echo ""
-        echo "首次使用，正在建置環境（約 3-5 分鐘）…"
+        echo "正在下載 vid-snatch（約 1 GB，第一次或大改版可能要幾分鐘）…"
+        echo ""
+        if pull_image; then
+            echo ""
+            echo "下載完成！"
+            return 0
+        fi
+        echo ""
+        echo "下載失敗，改為在本機建置環境（約 3-5 分鐘）…"
         echo ""
         docker build -t "$IMAGE_LOCAL" "$BUILD_DIR"
         echo ""
         echo "建置完成！"
+        return 0
     fi
+
+    echo "正在檢查更新…"
+    local status=0
+    image_up_to_date || status=$?
+    case "$status" in
+        0)
+            echo "已是最新版"
+            ;;
+        1)
+            echo "發現新版本，正在下載…（第一次或大改版可能要幾分鐘）"
+            echo ""
+            if pull_image; then
+                echo ""
+                echo "更新完成！"
+            else
+                echo ""
+                echo "下載失敗，先用目前版本啟動"
+            fi
+            ;;
+        *)
+            echo "無法檢查更新，先用目前版本啟動"
+            ;;
+    esac
 }
 
 container_running() {
@@ -248,6 +327,9 @@ host_loop() {
         fi
     done
 }
+
+# 測試以 source 載入時只取函式，不跑主流程（tests/test_mac_command.py）
+[ "${BASH_SOURCE[0]}" != "$0" ] && return 0
 
 # ── 主流程 ──────────────────────────────────
 load_config
