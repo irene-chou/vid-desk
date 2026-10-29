@@ -1,4 +1,4 @@
-from vid_snatch.core import sanitize_filename
+from vid_desk.core import sanitize_filename
 
 def test_strips_unsafe_chars():
     assert sanitize_filename('a/b:c?d') == 'a_b_c_d'

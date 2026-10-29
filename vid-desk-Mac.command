@@ -1,13 +1,13 @@
 #!/bin/bash
-# vid-snatch 一鍵啟動腳本
+# vid-desk 一鍵啟動腳本
 # 雙擊此檔案即可使用
 
 cd "$(dirname "$0")" || exit 1
 xattr -dr com.apple.quarantine "$(dirname "$0")" 2>/dev/null || true
 
-IMAGE_REMOTE="ghcr.io/irene-chou/vid-snatch:latest"
-IMAGE_LOCAL="vid-snatch"
-CONTAINER="vid-snatch"
+IMAGE_REMOTE="ghcr.io/irene-chou/vid-desk:latest"
+IMAGE_LOCAL="vid-desk"
+CONTAINER="vid-desk"
 DEFAULT_PORT=8080
 PORT="$DEFAULT_PORT"
 PROJECT_DIR="$(pwd)"
@@ -16,9 +16,9 @@ BUILD_DIR="$PROJECT_DIR"
 [ -f "$PROJECT_DIR/files/Dockerfile" ] && BUILD_DIR="$PROJECT_DIR/files"
 
 # ── 設定檔 ──────────────────────────────────
-CONFIG_DIR="$HOME/.config/vid-snatch"
+CONFIG_DIR="$HOME/.config/vid-desk"
 CONFIG_FILE="$CONFIG_DIR/config"
-DEFAULT_OUTPUT_DIR="$HOME/Music/vid-snatch"
+DEFAULT_OUTPUT_DIR="$HOME/Music/vid-desk"
 
 load_config() {
     OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
@@ -123,7 +123,7 @@ pull_image() {
 ensure_image() {
     if ! docker image inspect "$IMAGE_LOCAL" &> /dev/null; then
         echo ""
-        echo "正在下載 vid-snatch（約 1 GB，第一次或大改版可能要幾分鐘）…"
+        echo "正在下載 vid-desk（約 1 GB，第一次或大改版可能要幾分鐘）…"
         echo ""
         if pull_image; then
             echo ""
@@ -223,7 +223,7 @@ cleanup() {
 # ── 主機端動作 ──────────────────────────────
 post_result() {
     # $1 = action id, $2 = JSON body
-    curl -s -m 5 -X POST -H 'X-Vid-Snatch: 1' -H 'Content-Type: application/json' \
+    curl -s -m 5 -X POST -H 'X-Vid-Desk: 1' -H 'Content-Type: application/json' \
         -d "$2" "localhost:$PORT/api/host-actions/$1/result" > /dev/null 2>&1
 }
 
@@ -291,7 +291,7 @@ do_rebuild() {
 
 host_loop() {
     echo ""
-    echo "vid-snatch 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。"
+    echo "vid-desk 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。"
 
     local json parsed id kind path del fails=0
     while true; do
@@ -313,7 +313,7 @@ host_loop() {
         else
             fails=$((fails + 1))
             if [ "$fails" -ge 3 ] && ! container_running; then
-                echo "vid-snatch 已停止。"
+                echo "vid-desk 已停止。"
                 exit 0
             fi
         fi
@@ -337,7 +337,7 @@ ensure_docker
 
 if container_running; then
     PORT="$(read_port)"
-    echo "vid-snatch 已經在執行中，已幫你打開瀏覽器。"
+    echo "vid-desk 已經在執行中，已幫你打開瀏覽器。"
     open_browser
     exit 0
 fi

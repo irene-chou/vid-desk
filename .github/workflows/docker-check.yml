@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: vid-snatch:ci
+      IMAGE: vid-desk:ci
     steps:
       - uses: actions/checkout@v4
 
@@ -51,8 +51,8 @@ jobs:
           import math, struct, sys, time, wave
           from pathlib import Path
 
-          from vid_snatch.core import separate
-          from vid_snatch.models import DEMUCS_MODELS
+          from vid_desk.core import separate
+          from vid_desk.models import DEMUCS_MODELS
 
           work = Path(sys.argv[1])
           src = work / "測試 歌曲.wav"

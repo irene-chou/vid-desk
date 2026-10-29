@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from vid_snatch import __version__
-from vid_snatch.web import create_app
-from vid_snatch.jobs import UPGRADE_MARKER, JobQueue
-from vid_snatch.hostactions import HostActionQueue
+from vid_desk import __version__
+from vid_desk.web import create_app
+from vid_desk.jobs import UPGRADE_MARKER, JobQueue
+from vid_desk.hostactions import HostActionQueue
 from tests.test_jobs import FakeBackend, run_until_idle
 
 ROOT = Path(__file__).parent.parent
-H = {"X-Vid-Snatch": "1"}
+H = {"X-Vid-Desk": "1"}
 MP3 = {"audio": {"versions": ["original"]}}
 ALL = {"audio": {"versions": ["original", "instrumental", "vocals"], "format": "mp3", "model": "htdemucs"},
        "video": {"max_height": 1080}}
@@ -21,7 +21,7 @@ def env(tmp_path):
     q = JobQueue(out, backend=FakeBackend(), upgrade_marker=cfg / UPGRADE_MARKER); q.start()
     h = HostActionQueue(started_at=0.0)
     shutdown = []
-    app = create_app(out, cfg, "/Users/me/Music/vid-snatch", q, h, on_shutdown=lambda: shutdown.append(1))
+    app = create_app(out, cfg, "/Users/me/Music/vid-desk", q, h, on_shutdown=lambda: shutdown.append(1))
     yield TestClient(app, base_url="http://localhost"), q, h, cfg, shutdown
     q.stop()
 
@@ -74,7 +74,7 @@ def test_reveal_pushes_host_path(env):
     job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": MP3, "filename": "song"}, headers=H).json()["jobs"][0]
     run_until_idle(q)
     assert c.post(f"/api/jobs/{job['id']}/reveal", headers=H).status_code == 200
-    assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-snatch/song.mp3"}
+    assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-desk/song.mp3"}
 
 def test_pick_folder_cancelled_keeps_setting(env):
     import threading
@@ -86,7 +86,7 @@ def test_pick_folder_cancelled_keeps_setting(env):
             threading.Event().wait(0.05)
     threading.Thread(target=answer).start()
     r = c.post("/api/settings/pick-folder", headers=H).json()
-    assert r == {"output_dir": "/Users/me/Music/vid-snatch", "changed": False}
+    assert r == {"output_dir": "/Users/me/Music/vid-desk", "changed": False}
     assert not (cfg / "config").exists()
 
 def test_settings_write(env):
@@ -98,26 +98,26 @@ def test_settings_write(env):
 def test_settings_defaults(env):
     c, *_ = env
     # #31：不再有 can_upgrade（#27 的「更新」鈕已移除）
-    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3",
+    assert c.get("/api/settings").json() == {"output_dir": "/Users/me/Music/vid-desk", "audio_format": "mp3",
                                              "demucs_model": "htdemucs_ft", "video_max_height": None,
                                              "version": __version__}
 
 def test_settings_reports_package_version(env):
-    # #25：頁首版本號從 GET /api/settings 的 version 來，等於 vid_snatch.__version__
+    # #25：頁首版本號從 GET /api/settings 的 version 來，等於 vid_desk.__version__
     c, *_ = env
     assert c.get("/api/settings").json()["version"] == __version__
     r = c.post("/api/settings", json={"audio_format": "flac"}, headers=H).json()
     assert r["version"] == __version__
 
 def test_can_upgrade_removed_everywhere():
-    # #31：can_upgrade / VS_CAN_UPGRADE 整條拿掉（API、create_app、webserver、vid-snatch.ps1、ci-smoke）
+    # #31：can_upgrade / VS_CAN_UPGRADE 整條拿掉（API、create_app、webserver、vid-desk.ps1、ci-smoke）
     import inspect
-    from vid_snatch import web, webserver
+    from vid_desk import web, webserver
     assert "can_upgrade" not in inspect.signature(create_app).parameters
     assert not hasattr(webserver, "can_upgrade_from_env")
     for mod in (web, webserver):
         assert "can_upgrade" not in inspect.getsource(mod)
-    for name in ("vid-snatch.ps1", "windows/ci-smoke.ps1"):
+    for name in ("vid-desk.ps1", "windows/ci-smoke.ps1"):
         assert "CAN_UPGRADE" not in (ROOT / name).read_text(encoding="utf-8-sig"), name
 
 def test_update_failed_job_exposes_error_kind_and_writes_upgrade_marker(env):
@@ -129,20 +129,20 @@ def test_update_failed_job_exposes_error_kind_and_writes_upgrade_marker(env):
     job = c.get("/api/jobs").json()["jobs"][0]
     assert job["state"] == "failed" and job["error_kind"] == "update_failed"
     assert job["message"] == "下載工具更新後仍無法下載"
-    # #31：同時寫下 <config>/upgrade-pending，vid-snatch.ps1 下次啟動據此升級所有相依套件
+    # #31：同時寫下 <config>/upgrade-pending，vid-desk.ps1 下次啟動據此升級所有相依套件
     assert (cfg / UPGRADE_MARKER).is_file()
     # 設定檔不受影響（config 目錄之前不存在，標記檔自己建目錄）
     assert c.get("/api/settings").json()["audio_format"] == "mp3"
 
 def test_webserver_wires_upgrade_marker_into_config_dir():
     import inspect
-    from vid_snatch import webserver
+    from vid_desk import webserver
     assert "upgrade_marker=Path(config_dir) / UPGRADE_MARKER" in inspect.getsource(webserver.run_web)
 
 def test_settings_details_partial_update_without_restart(env):
     c, q, h, cfg, _ = env
     r = c.post("/api/settings", json={"audio_format": "flac", "video_max_height": 720}, headers=H).json()
-    assert r == {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
+    assert r == {"output_dir": "/Users/me/Music/vid-desk", "audio_format": "flac",
                  "demucs_model": "htdemucs_ft", "video_max_height": 720, "version": __version__,
                  "restart_required": False}
     r = c.post("/api/settings", json={"demucs_model": "htdemucs", "video_max_height": None}, headers=H).json()
@@ -219,7 +219,7 @@ def test_reveal_uses_first_done_output(env):
     job = c.post("/api/jobs", json={"urls": ["https://youtu.be/a"], "outputs": {"audio": {"versions": ["instrumental"]}, "video": {}}, "filename": "song"}, headers=H).json()["jobs"][0]
     run_until_idle(q)
     assert c.post(f"/api/jobs/{job['id']}/reveal", headers=H).status_code == 200
-    assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-snatch/song_no_vocals.mp3"}
+    assert h.poll()[0]["payload"] == {"path": "/Users/me/Music/vid-desk/song_no_vocals.mp3"}
 
 def test_shutdown_calls_hook(env):
     c, q, h, cfg, shutdown = env

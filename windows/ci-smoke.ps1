@@ -1,4 +1,4 @@
-﻿# vid-snatch Windows 原生安裝冒煙測試（只給 GitHub Actions 用）
+﻿# vid-desk Windows 原生安裝冒煙測試（只給 GitHub Actions 用）
 # 依序跑下面的情境，共用同一份安裝；任一情境失敗就印出啟動器輸出與 $Root\logs\* 後 exit 1。
 # 需要環境變數 VS_SMOKE_SHA：這次測試的 commit（workflow 傳入），用來走真正的「從 GitHub 更新」路徑：
 # 啟動器查的 releases/latest 端點以本機 http.server 假冒（VS_UPDATE_API），tag_name 回這個 sha，
@@ -20,20 +20,20 @@ $TestHome = Join-Path $env:RUNNER_TEMP '測試 使用者'
 $env:USERPROFILE = $TestHome
 $env:LOCALAPPDATA = Join-Path $TestHome 'AppData\Local'
 $env:VS_NO_BROWSER = '1'
-$Root = Join-Path $env:LOCALAPPDATA 'vid-snatch'
+$Root = Join-Path $env:LOCALAPPDATA 'vid-desk'
 $ServerFile = Join-Path $Root 'server.json'
 $AppDir = Join-Path $Root 'app'
 $CommitMarker = Join-Path $Root 'state\installed-commit'
 $RepairFlag = Join-Path $Root 'state\repair'
 $ConfigFile = Join-Path $Root 'config\config'
-# 後端在「自動更新下載工具後仍失敗」時寫的標記；vid-snatch.ps1 看到就比照 -Upgrade 更新後刪掉（#31）
+# 後端在「自動更新下載工具後仍失敗」時寫的標記；vid-desk.ps1 看到就比照 -Upgrade 更新後刪掉（#31）
 $UpgradeMarker = Join-Path $Root 'config\upgrade-pending'
 $TorchDir = Join-Path $Root 'torch'
 $Sentinel = Join-Path $AppDir 'ci-sentinel.txt'
-# 與 vid-snatch.ps1 的預設下載資料夾算法相同（系統的「音樂」資料夾，不受 USERPROFILE 影響）
+# 與 vid-desk.ps1 的預設下載資料夾算法相同（系統的「音樂」資料夾，不受 USERPROFILE 影響）
 $MusicDir = [Environment]::GetFolderPath('MyMusic')
 if (-not $MusicDir) { $MusicDir = Join-Path $env:USERPROFILE 'Music' }
-$DefaultOutputDir = Join-Path $MusicDir 'vid-snatch'
+$DefaultOutputDir = Join-Path $MusicDir 'vid-desk'
 $CustomOutputDir = Join-Path $TestHome '自訂 下載'
 
 $Sha = "$env:VS_SMOKE_SHA".Trim()
@@ -46,7 +46,7 @@ $OfflineApi = 'http://127.0.0.1:9/'
 
 $SmokeLogDir = Join-Path $env:RUNNER_TEMP 'smoke-logs'
 $EmptyInput = Join-Path $SmokeLogDir 'empty-stdin.txt'
-$Backup = Join-Path $env:RUNNER_TEMP 'vid-snatch-backup'
+$Backup = Join-Path $env:RUNNER_TEMP 'vid-desk-backup'
 
 $Scenario = '準備'
 $Launchers = New-Object System.Collections.ArrayList
@@ -130,7 +130,7 @@ function Start-Launcher([string]$name) {
     return $proc
 }
 
-# 啟動器（含它執行的 vid-snatch.ps1）目前為止的輸出
+# 啟動器（含它執行的 vid-desk.ps1）目前為止的輸出
 function Get-LauncherOutput([string]$name) {
     $path = Join-Path $SmokeLogDir "$name.out.log"
     if (-not (Test-Path -LiteralPath $path)) { return '' }
@@ -176,7 +176,7 @@ function Get-Text([string]$url) {
 }
 
 # 主腳本的 Wait-Health 通過後（清掉 state\repair、開瀏覽器）才印這行，進入主機端動作迴圈
-$RunningLine = 'vid-snatch 執行中'
+$RunningLine = 'vid-desk 執行中'
 
 function Get-LauncherName($proc) {
     foreach ($l in @($Launchers)) { if ($l.Proc.Id -eq $proc.Id) { return $l.Name } }
@@ -191,7 +191,7 @@ function Get-Count([string]$text, [string]$part) {
 }
 
 # 等到 server.json 出現且其 port 的 /api/health 有回應，而且主腳本也已確認就緒
-# （輸出出現第 $runs 次「vid-snatch 執行中」），才回傳 server.json 內容。
+# （輸出出現第 $runs 次「vid-desk 執行中」），才回傳 server.json 內容。
 # 只看健康檢查會搶在主腳本自己的 Wait-Health 之前，之後馬上送 shutdown 時主腳本會當成
 # 「啟動中就被要求結束」，不會清掉 state\repair。
 # $exceptPid：忽略這個 pid（更新後要等新的伺服器）；$runs：同一個啟動器第幾次就緒
@@ -252,11 +252,11 @@ function Invoke-Post([int]$port, [string]$path, [string]$json) {
     try {
         if ($json) {
             Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:$port$path" `
-                -Headers @{ 'X-Vid-Snatch' = '1' } -ContentType 'application/json; charset=utf-8' `
+                -Headers @{ 'X-Vid-Desk' = '1' } -ContentType 'application/json; charset=utf-8' `
                 -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 10 | Out-Null
         } else {
             Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:$port$path" `
-                -Headers @{ 'X-Vid-Snatch' = '1' } -TimeoutSec 10 | Out-Null
+                -Headers @{ 'X-Vid-Desk' = '1' } -TimeoutSec 10 | Out-Null
         }
     } catch {
         Fail "POST $path 失敗：$($_.Exception.Message)"
@@ -300,7 +300,7 @@ function Start-MockApi {
     Remove-IfExists $MockApiDir
     New-Item -ItemType Directory -Force -Path $MockApiDir | Out-Null
     [System.IO.File]::WriteAllText((Join-Path $MockApiDir 'latest.json'),
-        "{`"tag_name`": `"$Sha`", `"name`": `"vid-snatch smoke`"}", (New-Object System.Text.UTF8Encoding($false)))
+        "{`"tag_name`": `"$Sha`", `"name`": `"vid-desk smoke`"}", (New-Object System.Text.UTF8Encoding($false)))
     $python = (Get-Command python).Source
     $script:MockApiServer = Start-Process -FilePath $python `
         -ArgumentList '-m', 'http.server', "$MockApiPort", '--bind', '127.0.0.1', '--directory', "`"$MockApiDir`"" `
@@ -387,7 +387,7 @@ Start-Scenario '3. 結束'
 Stop-AndVerify $first $info1 '第一個啟動器'
 
 # ── 4. 去人聲 ───────────────────────────────
-# 用 vid_snatch 自己的 remove_vocals 處理一段 2 秒的合成立體聲 WAV（不需網路），
+# 用 vid_desk 自己的 remove_vocals 處理一段 2 秒的合成立體聲 WAV（不需網路），
 # 確認執行期依賴齊全、產生非空的 _no_vocals.mp3，且不會再下載模型
 Start-Scenario '4. 去人聲'
 $venvPython = Join-Path $Root 'venv\Scripts\python.exe'
@@ -403,7 +403,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from vid_snatch.core import remove_vocals
+from vid_desk.core import remove_vocals
 
 work = Path(sys.argv[1])
 src = work / "測試 歌曲.wav"
@@ -434,7 +434,7 @@ Write-Host "$HfHome 有 $($weights.Count) 個 .safetensors"
 # 模型可能被寫到的所有快取：Hugging Face、torch hub（demucs 的舊來源）、XDG
 $watchDirs = @($HfHome, $TorchDir, (Join-Path $Root 'cache-xdg'))
 $filesBefore = ($watchDirs | ForEach-Object { "[$_]`n" + (Get-FileList $_) }) -join "`n"
-# 與 vid-snatch.ps1 的伺服器環境相同：bin\ 在 PATH 最前面（demucs 用 ffmpeg 讀檔）、
+# 與 vid-desk.ps1 的伺服器環境相同：bin\ 在 PATH 最前面（demucs 用 ffmpeg 讀檔）、
 # TORCH_HOME / HF_HOME 在 $Root 底下、HF_HUB_OFFLINE=1（證明不需要網路）
 $envNames = @('TORCH_HOME', 'HF_HOME', 'HF_HUB_OFFLINE', 'HF_HUB_DISABLE_SYMLINKS_WARNING')
 $savedPath = $env:PATH
@@ -448,7 +448,7 @@ $ErrorActionPreference = 'Continue'
 & $venvPython -I $vocalScript $vocalDir | Out-Host
 $code = $LASTEXITCODE
 $ErrorActionPreference = 'Stop'
-# 還原環境，後面的啟動器才是在測 vid-snatch.ps1 自己的設定
+# 還原環境，後面的啟動器才是在測 vid-desk.ps1 自己的設定
 $env:PATH = $savedPath
 foreach ($n in $envNames) { Remove-Item "Env:\$n" -ErrorAction SilentlyContinue }
 if ($code -ne 0) { Fail "remove_vocals 失敗，結束碼 $code" }
@@ -472,8 +472,8 @@ $env:VS_UPDATE_API = $MockApi
 $fetch = Start-Launcher 'launcher-fetch'
 $info5 = Wait-Server $fetch (15 * 60)
 # 啟動器把假端點回的 tag_name（這裡是 sha）寫進 app\.commit；封存檔下載失敗時會退回本機原始碼，.commit 就不會是它
-if ((Read-Text (Join-Path $AppDir '.commit')) -ne $Sha) { Fail "app\.commit 是「$(Read-Text (Join-Path $AppDir '.commit'))」，預期 $Sha（封存檔 github.com/irene-chou/vid-snatch/archive/$Sha.zip 下載失敗？）" }
-if (-not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) { Fail 'app\vid-snatch.ps1 不存在' }
+if ((Read-Text (Join-Path $AppDir '.commit')) -ne $Sha) { Fail "app\.commit 是「$(Read-Text (Join-Path $AppDir '.commit'))」，預期 $Sha（封存檔 github.com/irene-chou/vid-desk/archive/$Sha.zip 下載失敗？）" }
+if (-not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-desk.ps1'))) { Fail 'app\vid-desk.ps1 不存在' }
 if ((Read-Text $CommitMarker) -ne $Sha) { Fail "state\installed-commit 是「$(Read-Text $CommitMarker)」，預期 $Sha" }
 Write-Host "app\ 與 state\installed-commit 都是 $Sha"
 Stop-AndVerify $fetch $info5 '取得原始碼的啟動器'

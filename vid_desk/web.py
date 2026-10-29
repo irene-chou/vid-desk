@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from . import __version__, config, core
-from .errors import VidSnatchError
+from .errors import VidDeskError
 from .hostactions import HostActionQueue
 from .jobs import JobQueue
 from .outputs import OutputOptions
@@ -92,7 +92,7 @@ def create_app(
     async def require_header(request: Request, call_next):
         if not _host_allowed(request.headers.get("host")):
             return _error(403, "forbidden")
-        if request.method in ("POST", "DELETE") and request.headers.get("X-Vid-Snatch") != "1":
+        if request.method in ("POST", "DELETE") and request.headers.get("X-Vid-Desk") != "1":
             return _error(403, "forbidden")
         return await call_next(request)
 
@@ -112,7 +112,7 @@ def create_app(
             return _error(400, "這不是 YouTube 影片網址")
         try:
             title = await asyncio.to_thread(core.fetch_title, cleaned)
-        except VidSnatchError as e:
+        except VidDeskError as e:
             return _error(400, e.message, detail=e.detail, kind=e.kind)
         return {"title": title}
 

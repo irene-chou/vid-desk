@@ -1,11 +1,11 @@
-﻿# vid-snatch 一鍵啟動腳本 (Windows)
-# 請雙擊 vid-snatch-Windows.bat，它會呼叫這個檔案。
+﻿# vid-desk 一鍵啟動腳本 (Windows)
+# 請雙擊 vid-desk-Windows.bat，它會呼叫這個檔案。
 # 注意：此檔需存成 UTF-8 with BOM，Windows PowerShell 5.1 才能正確讀取中文。
 # 由 windows\launcher.ps1 以 -Commit <版本標記或 local>（及更新時的 -Upgrade）呼叫；
 # 這個檔案所在的資料夾即要安裝的原始碼（含 pyproject.toml）。
 #
 # 與 launcher.ps1 的約定——啟動器發佈後無法再更新，以下永遠不能改：
-#   - 這個檔案固定放在原始碼封存檔的根目錄，檔名 vid-snatch.ps1
+#   - 這個檔案固定放在原始碼封存檔的根目錄，檔名 vid-desk.ps1
 #   - 接受 -Commit <版本標記或 local> 與 -Upgrade 兩個參數（日後只能新增選用參數）。
 #     版本標記是不透明字串，只拿來與 state\installed-commit 比對是否相同：
 #     新版啟動器傳 release 標籤名稱（如 v0.3.0），舊版啟動器傳 40 碼 commit sha，兩者都要接受
@@ -25,14 +25,14 @@ try {
 Set-Location -LiteralPath $PSScriptRoot
 
 # ── 安裝目錄 ────────────────────────────────
-$Root = Join-Path $env:LOCALAPPDATA 'vid-snatch'
+$Root = Join-Path $env:LOCALAPPDATA 'vid-desk'
 $BinDir = Join-Path $Root 'bin'
 $UvExe = Join-Path $BinDir 'uv.exe'
 $PythonDir = Join-Path $Root 'python'
 $CacheDir = Join-Path $Root 'cache'
 $VenvDir = Join-Path $Root 'venv'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
-$VenvExe = Join-Path $VenvDir 'Scripts\vid-snatch.exe'
+$VenvExe = Join-Path $VenvDir 'Scripts\vid-desk.exe'
 $TorchDir = Join-Path $Root 'torch'
 # demucs 4.1 從 Hugging Face Hub 讀去人聲模型，快取放這裡
 $HfHome = Join-Path $Root 'huggingface'
@@ -56,12 +56,12 @@ $ServerProc = $null
 # ── 設定檔 ──────────────────────────────────
 $ConfigDir = Join-Path $Root 'config'
 $ConfigFile = Join-Path $ConfigDir 'config'
-# 後端在「自動更新下載工具後仍失敗」時寫下的標記（vid_snatch/jobs.py 的 UPGRADE_MARKER，#31）；下次啟動比照 -Upgrade 更新所有元件
+# 後端在「自動更新下載工具後仍失敗」時寫下的標記（vid_desk/jobs.py 的 UPGRADE_MARKER，#31）；下次啟動比照 -Upgrade 更新所有元件
 $UpgradeMarker = Join-Path $ConfigDir 'upgrade-pending'
 # 「音樂」資料夾可能被 OneDrive 或使用者搬到別處，以系統回報的位置為準
 $MusicDir = [Environment]::GetFolderPath('MyMusic')
 if (-not $MusicDir) { $MusicDir = Join-Path $env:USERPROFILE 'Music' }
-$DefaultOutputDir = Join-Path $MusicDir 'vid-snatch'
+$DefaultOutputDir = Join-Path $MusicDir 'vid-desk'
 $OutputDir = $DefaultOutputDir
 
 function Get-CleanPath([string]$p) {
@@ -100,7 +100,7 @@ function Wait-AnyKey([string]$msg) {
 $UvUrl = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
 $DenoUrl = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
 $FfmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
-$RetryHint = '請確認網路連線後重新雙擊 vid-snatch-Windows.bat'
+$RetryHint = '請確認網路連線後重新雙擊 vid-desk-Windows.bat'
 
 function Remove-IfExists([string]$path) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }
@@ -125,7 +125,7 @@ function Save-Download([string]$Url, [string]$Dest, [string]$Label) {
     try {
         [void][System.IO.Directory]::CreateDirectory((Split-Path $Dest -Parent))
         Remove-IfExists $part
-        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $part -TimeoutSec 600 -UserAgent 'vid-snatch' -ErrorAction Stop
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $part -TimeoutSec 600 -UserAgent 'vid-desk' -ErrorAction Stop
         Move-Item -LiteralPath $part -Destination $Dest -Force -ErrorAction Stop
     } catch {
         try { Remove-IfExists $part } catch { }
@@ -218,7 +218,7 @@ function Clear-CommitMarker {
     }
 }
 
-# 結束後保證 bin\ 四個執行檔、venv 內的 vid-snatch、去人聲模型都在，且本行程環境變數已設好
+# 結束後保證 bin\ 四個執行檔、venv 內的 vid-desk、去人聲模型都在，且本行程環境變數已設好
 function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     Assert-SupportedArch
     Set-InstallEnv
@@ -278,15 +278,15 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
     } elseif ($Upgrade) {
         Write-Host '正在更新元件…'
         Clear-CommitMarker
-        if (-not (Install-Packages @('--upgrade', '--reinstall-package', 'vid-snatch'))) { Exit-InstallFailed }
+        if (-not (Install-Packages @('--upgrade', '--reinstall-package', 'vid-desk'))) { Exit-InstallFailed }
         Set-CommitMarker $Commit
         $pkgChanged = $true
     } elseif ($installed -ne $Commit -or -not (Test-Path -LiteralPath $VenvExe) -or
         ($Commit -eq 'local' -and $env:VS_SOURCE -eq 'local')) {
         # 'local'（解壓資料夾的原始碼）只在開發／測試指定 VS_SOURCE=local 時每次重裝
-        Write-Host '正在安裝新版 vid-snatch…'
+        Write-Host '正在安裝新版 vid-desk…'
         Clear-CommitMarker
-        if (Install-Packages @('--reinstall-package', 'vid-snatch')) {
+        if (Install-Packages @('--reinstall-package', 'vid-desk')) {
             Set-CommitMarker $Commit
             $pkgChanged = $true
         } elseif (Test-Path -LiteralPath $VenvExe) {
@@ -299,14 +299,14 @@ function Ensure-Installed([string]$Commit, [switch]$Upgrade) {
         }
     }
 
-    # 由 vid_snatch.models 依 demucs 自己的規則下載到 Hugging Face 快取（中斷後會續傳）。
+    # 由 vid_desk.models 依 demucs 自己的規則下載到 Hugging Face 快取（中斷後會續傳）。
     # 套件有變動時也重跑一次：已下載的檔案只做快速比對，新版改用別的模型時會補下載
     if ($pkgChanged -or -not (Test-Path -LiteralPath $ModelMarker)) {
         Write-Host ''
         Write-Host '正在準備去人聲模型（快速與高品質兩種，第一次約 400 MB）…'
         try { Remove-IfExists $ModelMarker } catch { }
         Remove-Item Env:\HF_HUB_OFFLINE -ErrorAction SilentlyContinue
-        & $VenvPython -m vid_snatch.models | Out-Host
+        & $VenvPython -m vid_desk.models | Out-Host
         if ($LASTEXITCODE -ne 0) {
             Write-Host ''
             Write-Host "下載去人聲模型失敗，$RetryHint"
@@ -383,7 +383,7 @@ function Start-Server {
         $null = $proc.Handle
         $script:ServerProc = $proc
     } catch {
-        Write-Host "無法啟動 vid-snatch：$VenvExe"
+        Write-Host "無法啟動 vid-desk：$VenvExe"
         return $false
     }
     try {
@@ -417,7 +417,7 @@ function Wait-Health {
         # 伺服器在就緒前就結束了（例如啟動當下就收到結束要求，或啟動失敗），不必再等
         if ($script:ServerProc -and $script:ServerProc.HasExited) {
             if ($script:ServerProc.ExitCode -eq 0) {
-                Write-Host 'vid-snatch 已停止。'
+                Write-Host 'vid-desk 已停止。'
                 exit 0
             }
             break
@@ -439,7 +439,7 @@ function Wait-Health {
             ForEach-Object { Write-Host $_ }
     }
     Write-Host ''
-    # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
+    # 由 vid-desk-Windows.bat 在結束碼非 0 時停住視窗
     exit 1
 }
 
@@ -487,12 +487,12 @@ function Get-ProcessTreeIds([int]$rootId) {
 }
 
 # 停止伺服器並等到行程真的結束（更新時要覆寫 deno.exe 與 venv）；停不掉時回傳 $false 並保留 server.json
-function Stop-VidSnatch {
+function Stop-VidDesk {
     $info = Read-ServerInfo
     if ($info) {
         $main = Get-Process -Id $info.Id -ErrorAction SilentlyContinue
         # 行程名稱不符代表伺服器早已結束、pid 被別的程式重用，不能動它
-        if ($main -and $main.ProcessName -eq 'vid-snatch') {
+        if ($main -and $main.ProcessName -eq 'vid-desk') {
             $procs = @(Get-Process -Id (Get-ProcessTreeIds $info.Id) -ErrorAction SilentlyContinue)
             foreach ($proc in $procs) {
                 try { Stop-Process -InputObject $proc -Force -ErrorAction SilentlyContinue } catch { }
@@ -561,7 +561,7 @@ $json = ConvertTo-Json @{ path = $picked } -Compress
 $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
 try {
     Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:$port/api/host-actions/$id/result" `
-        -Headers @{ 'X-Vid-Snatch' = '1' } -ContentType 'application/json; charset=utf-8' `
+        -Headers @{ 'X-Vid-Desk' = '1' } -ContentType 'application/json; charset=utf-8' `
         -Body $bytes -TimeoutSec 5 | Out-Null
 } catch { }
 '@
@@ -608,8 +608,8 @@ function Remove-Tree([string]$path) {
 
 function Invoke-Uninstall($deleteDownloads) {
     Write-Host ''
-    Write-Host '正在移除 vid-snatch…'
-    [void](Stop-VidSnatch)
+    Write-Host '正在移除 vid-desk…'
+    [void](Stop-VidDesk)
     # 這個腳本本身就在要刪除的資料夾裡，先離開，避免目前目錄鎖住資料夾
     Set-Location -LiteralPath $env:TEMP
     if ($deleteDownloads -eq $true) {
@@ -632,7 +632,7 @@ function Invoke-Uninstall($deleteDownloads) {
     Write-Host ''
     Write-Host '============================================'
     Write-Host '  解除安裝完成！'
-    Write-Host '  如需完全移除，可刪除你解壓縮的 vid-snatch 資料夾：'
+    Write-Host '  如需完全移除，可刪除你解壓縮的 vid-desk 資料夾：'
     if ($env:VS_LAUNCH_DIR) { Write-Host "  $env:VS_LAUNCH_DIR" }
     Write-Host '============================================'
     Wait-AnyKey '按任意鍵關閉...'
@@ -642,9 +642,9 @@ function Invoke-Uninstall($deleteDownloads) {
 # 結束碼 10 請啟動器重新取得最新原始碼並以 -Upgrade 執行；只有使用者按「更新」才會走到這裡
 function Invoke-Rebuild {
     Write-Host '正在更新…'
-    if (-not (Stop-VidSnatch)) {
-        Write-Host '無法停止 vid-snatch，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
-        # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
+    if (-not (Stop-VidDesk)) {
+        Write-Host '無法停止 vid-desk，請關閉此視窗後重新雙擊 vid-desk-Windows.bat'
+        # 由 vid-desk-Windows.bat 在結束碼非 0 時停住視窗
         exit 1
     }
     exit 10
@@ -675,7 +675,7 @@ function Wait-Enter([int]$ms) {
 
 function Invoke-HostLoop {
     Write-Host ''
-    Write-Host 'vid-snatch 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。'
+    Write-Host 'vid-desk 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。'
 
     $fails = 0
     while ($true) {
@@ -700,7 +700,7 @@ function Invoke-HostLoop {
                 }
             }
         } elseif ($fails -ge 3 -and -not (Test-ServerRunning)) {
-            Write-Host 'vid-snatch 已停止。'
+            Write-Host 'vid-desk 已停止。'
             exit 0
         }
 
@@ -714,7 +714,7 @@ Load-Config
 
 # 要在 Ensure-Installed 之前檢查，才不會在伺服器運作中重裝套件
 if (Test-ServerRunning) {
-    Write-Host 'vid-snatch 已經在執行中，已幫你打開瀏覽器。'
+    Write-Host 'vid-desk 已經在執行中，已幫你打開瀏覽器。'
     Open-Browser
     exit 0
 }
@@ -730,7 +730,7 @@ if (Test-Path -LiteralPath $UpgradeMarker) {
 Ensure-Installed $Commit -Upgrade:$Upgrade
 if (-not (Start-Server)) {
     Write-Host '啟動失敗，請把這個視窗的內容截圖給開發者'
-    # 由 vid-snatch-Windows.bat 在結束碼非 0 時停住視窗
+    # 由 vid-desk-Windows.bat 在結束碼非 0 時停住視窗
     exit 1
 }
 
@@ -742,5 +742,5 @@ try {
     Open-Browser
     Invoke-HostLoop
 } finally {
-    [void](Stop-VidSnatch)
+    [void](Stop-VidDesk)
 }

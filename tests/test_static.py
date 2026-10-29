@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).parent.parent
-HTML = (ROOT / "vid_snatch/static/index.html").read_text(encoding="utf-8")
+HTML = (ROOT / "vid_desk/static/index.html").read_text(encoding="utf-8")
 
 def test_required_ids_present():
     for i in ["urls", "paste", "out-audio", "out-video", "v-original", "v-instrumental", "v-vocals",
@@ -20,7 +20,7 @@ def test_header_shows_version_without_stats():
     for needle in ("stat-queued", "stat-running", "stat-done", "stat-failed", 'id="stats"', "updateStats", "jobsById", ".stat {", ".hdr .stat"):
         assert needle not in HTML, needle
     header = re.search(r'<header class="hdr">(.*?)</header>', HTML, re.S).group(1)
-    assert re.search(r'<div class="brand">.*<h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>', header)
+    assert re.search(r'<div class="brand">.*<h1>vid-desk</h1><span class="ver" id="version" hidden></span></div>', header)
     assert header.count("<button") == 2 and 'id="settings-toggle"' in header and 'id="theme-toggle"' in header
     # 版本號：名稱右側等寬小字、--muted 色；載入設定時填入，取不到就維持隱藏
     assert ".brand .ver { font-family: var(--mono); font-size: 0.78rem; font-weight: 400; color: var(--muted); }" in HTML
@@ -60,7 +60,7 @@ def test_advanced_notice_spaced_from_buttons():
 
 def test_settings_advanced_has_no_update_button():
     # #27：設定 → 進階只剩「解除安裝」；showAdvancedNotice 仍給更換資料夾 / 解除安裝用
-    for needle in ('id="rebuild"', "更新 vid-snatch", "function rebuild()", '$("rebuild")'):
+    for needle in ('id="rebuild"', "更新 vid-desk", "function rebuild()", '$("rebuild")'):
         assert needle not in HTML, needle
     adv = re.search(r"<details>\s*<summary>進階.*?</details>", HTML, re.S).group(0)
     assert re.findall(r"<button\b[^>]*>", adv) == ['<button id="uninstall" type="button" class="danger">']
@@ -70,7 +70,7 @@ def test_settings_advanced_has_no_update_button():
 def test_update_failed_banner_is_page_level_without_buttons():
     # #31：自動更新下載工具後仍失敗改成頁面層級橫幅（頁首下方、輸入區上方、跨兩欄），不分平台、沒有按鈕
     banner = re.search(r'<div id="update-failed" class="banner" role="status" hidden>(.*?)</div>', HTML).group(1)
-    assert banner == '<svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。</span>'
+    assert banner == '<svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-desk 再試。</span>'
     assert "<button" not in banner
     assert HTML.index("</header>") < HTML.index('id="update-failed"') < HTML.index('<section class="panel" id="input"')
     assert re.search(r"\.banner \{ grid-column: 1 / -1;[^}]*var\(--warn\)", HTML)
@@ -104,7 +104,7 @@ def test_fonts_from_google_with_system_fallback():
     assert re.search(r'--mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas', HTML)
 
 def test_csrf_header_and_sse_present():
-    assert "X-Vid-Snatch" in HTML and "EventSource" in HTML and "prefers-color-scheme" in HTML
+    assert "X-Vid-Desk" in HTML and "EventSource" in HTML and "prefers-color-scheme" in HTML
 
 def test_reduced_motion_respected():
     assert "prefers-reduced-motion: reduce" in HTML
@@ -190,7 +190,7 @@ def test_theme_applied_in_head_before_first_paint():
     assert head.index("<script>") < head.index('<link rel="stylesheet"') < head.index("<style>")
     body = script.group(1)
     assert "// @@theme-begin" in body and "// @@theme-end" in body
-    assert 'const THEME_KEY = "vid-snatch.theme";' in body
+    assert 'const THEME_KEY = "vid-desk.theme";' in body
     assert "applyTheme(document.documentElement, readTheme(() => localStorage));" in body
     # 讀寫都包 try，localStorage 不可用時當跟隨系統
     assert re.search(r"function readTheme\(getStorage\)\s*\{\s*try \{ return parseTheme\(getStorage\(\)\.getItem\(THEME_KEY\)\); \} catch \(e\) \{ return \"system\"; \}", body)
@@ -259,7 +259,7 @@ def test_card_sections_present():
 def test_delete_sends_csrf_header():
     assert re.search(r'function deleteJson\(path\)\s*\{\s*return sendJson\("DELETE", path\);', HTML)
     assert re.search(r'function postJson\(path, body\)\s*\{\s*return sendJson\("POST", path, body\);', HTML)
-    assert re.search(r'method,\s*headers: \{ "Content-Type": "application/json", "X-Vid-Snatch": "1" \}', HTML)
+    assert re.search(r'method,\s*headers: \{ "Content-Type": "application/json", "X-Vid-Desk": "1" \}', HTML)
 
 def test_timer_uses_received_elapsed_not_server_clock():
     # 前端計時以收到 job 時的 elapsed_seconds 為基準，不拿本機時鐘去減伺服器 started_at
@@ -291,7 +291,7 @@ def test_header_actions_github_kofi_theme_settings_borderless():
         ("a", "github-link"), ("a", "kofi-link"), ("button", "theme-toggle"), ("button", "settings-toggle")]
     assert all("ibtn" in a["class"].split() and a["aria-label"] and a["title"] for a in attrs)
     assert [(a["href"], a["aria-label"], a["title"]) for a in attrs[:2]] == [
-        ("https://github.com/irene-chou/vid-snatch", "GitHub", "GitHub"),
+        ("https://github.com/irene-chou/vid-desk", "GitHub", "GitHub"),
         ("https://ko-fi.com/zephyrinn", "請我喝杯咖啡", "請我喝杯咖啡"),
     ]
     for a in attrs[:2]:

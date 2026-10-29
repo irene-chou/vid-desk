@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, "..", "vid_snatch", "static", "index.html"), "utf8");
+const html = readFileSync(join(here, "..", "vid_desk", "static", "index.html"), "utf8");
 const outputsBlock = html.split("// @@outputs-state-begin")[1].split("// @@outputs-state-end")[0];
 const cardBlock = html.split("// @@card-fns-begin")[1].split("// @@card-fns-end")[0];
 const api = vm.runInThisContext(

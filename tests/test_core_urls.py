@@ -1,6 +1,6 @@
 import pytest
 
-from vid_snatch.core import clean_url
+from vid_desk.core import clean_url
 
 
 @pytest.mark.parametrize("raw,expected", [

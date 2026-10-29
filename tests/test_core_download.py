@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from vid_snatch import core
-from vid_snatch.errors import VidSnatchError
+from vid_desk import core
+from vid_desk.errors import VidDeskError
 
 
 class FakeYDL:
@@ -47,7 +47,7 @@ def test_fetch_title(fake_ytdlp):
 
 
 def test_fetch_title_raises_translated(fake_ytdlp):
-    with pytest.raises(VidSnatchError) as ei:
+    with pytest.raises(VidDeskError) as ei:
         core.fetch_title("https://youtu.be/fail")
     assert ei.value.kind == "private"
 
@@ -60,7 +60,7 @@ def test_download_audio_reports_progress(fake_ytdlp, tmp_path):
 
 
 def test_download_video_raises_translated(fake_ytdlp, tmp_path):
-    with pytest.raises(VidSnatchError) as ei:
+    with pytest.raises(VidDeskError) as ei:
         core.download_video("https://youtu.be/fail", tmp_path, "v")
     assert ei.value.kind == "private"
 
@@ -244,11 +244,11 @@ def test_separate_m4a_converts_temp_wav(fake_demucs, fake_convert, tmp_path):
 def test_separate_m4a_convert_failure_cleans_temp_and_partial(fake_demucs, fake_convert, tmp_path, monkeypatch):
     def broken(src, dst, audio_format, bitrate=192):
         dst.write_bytes(b"half")
-        raise VidSnatchError("unknown", "ffmpeg 失敗", "boom")
+        raise VidDeskError("unknown", "ffmpeg 失敗", "boom")
 
     monkeypatch.setattr(core, "convert_audio", broken)
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
-    with pytest.raises(VidSnatchError) as ei:
+    with pytest.raises(VidDeskError) as ei:
         core.separate(src, tmp_path, stems=("instrumental", "vocals"), audio_format="m4a")
     assert ei.value.message == "ffmpeg 失敗"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["s.wav"] and src.read_bytes() == b"wav"
@@ -257,7 +257,7 @@ def test_separate_m4a_convert_failure_cleans_temp_and_partial(fake_demucs, fake_
 def test_separate_restores_source_on_failure(fake_demucs, tmp_path, monkeypatch):
     monkeypatch.setattr(FakeSeparator, "separate_audio_file", lambda self, p: (_ for _ in ()).throw(RuntimeError("timed out")))
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
-    with pytest.raises(VidSnatchError) as ei:
+    with pytest.raises(VidDeskError) as ei:
         core.separate(src, tmp_path)
     assert ei.value.kind == "network" and src.exists()
 
@@ -270,7 +270,7 @@ def test_separate_save_failure_removes_partial_stems(fake_demucs, tmp_path, monk
             raise RuntimeError("disk full")
     monkeypatch.setattr(demucs.api, "save_audio", save_audio)
     src = tmp_path / "s.wav"; src.write_bytes(b"wav")
-    with pytest.raises(VidSnatchError):
+    with pytest.raises(VidDeskError):
         core.separate(src, tmp_path, stems=("instrumental", "vocals"))
     assert sorted(p.name for p in tmp_path.iterdir()) == ["s.wav"]
 

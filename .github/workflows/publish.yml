@@ -87,7 +87,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # v0.3.0 → 0.3.0；latest 永遠指到最新發版（vid-snatch-Mac.command 拉這個）
+          # v0.3.0 → 0.3.0；latest 永遠指到最新發版（vid-desk-Mac.command 拉這個）
           flavor: |
             latest=false
           tags: |

@@ -4,7 +4,7 @@ import re
 KINDS = ("private", "age", "unavailable", "live", "extractor_outdated", "update_failed", "network", "unknown")
 
 
-class VidSnatchError(Exception):
+class VidDeskError(Exception):
     def __init__(self, kind: str, message: str, detail: str = ""):
         super().__init__(message)
         self.kind = kind
@@ -24,11 +24,11 @@ _RULES = [
 _COMPILED = [(re.compile(p, re.IGNORECASE), k, m) for p, k, m in _RULES]
 
 
-def translate(exc: BaseException) -> VidSnatchError:
-    if isinstance(exc, VidSnatchError):
+def translate(exc: BaseException) -> VidDeskError:
+    if isinstance(exc, VidDeskError):
         return exc
     raw = str(exc)
     for rx, kind, message in _COMPILED:
         if rx.search(raw):
-            return VidSnatchError(kind, message, raw)
-    return VidSnatchError("unknown", "發生未知錯誤", raw)
+            return VidDeskError(kind, message, raw)
+    return VidDeskError("unknown", "發生未知錯誤", raw)
