@@ -4,7 +4,7 @@ demucs 4.1 先從 Hugging Face Hub 讀取模型（失敗才退回舊的 dl.fbaip
 所以預載的是 Hub 上的檔案，放進 Hugging Face 的快取（HF_HOME）。伺服器執行時設
 HF_HUB_OFFLINE=1，只讀快取、不連網。
 
-這個檔案不 import vid_snatch 的其他模組，Dockerfile 才能在複製程式碼前單獨執行它：
+這個檔案不 import vid_desk 的其他模組，Dockerfile 才能在複製程式碼前單獨執行它：
     python models.py
 """
 

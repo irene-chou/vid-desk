@@ -1,5 +1,5 @@
 import pytest
-from vid_snatch.errors import VidSnatchError, translate
+from vid_desk.errors import VidDeskError, translate
 
 @pytest.mark.parametrize("raw,kind,message", [
     ("ERROR: [youtube] abc: Private video. Sign in", "private", "這是私人影片，無法下載"),
@@ -14,13 +14,13 @@ from vid_snatch.errors import VidSnatchError, translate
 ])
 def test_translate(raw, kind, message):
     err = translate(RuntimeError(raw))
-    assert isinstance(err, VidSnatchError)
+    assert isinstance(err, VidDeskError)
     assert err.kind == kind
     assert err.message == message
     assert err.detail == raw
 
 def test_translate_passthrough():
-    e = VidSnatchError("network", "無法連線，請檢查網路", "x")
+    e = VidDeskError("network", "無法連線，請檢查網路", "x")
     assert translate(e) is e
 
 def test_bot_check_is_unknown():
@@ -28,6 +28,6 @@ def test_bot_check_is_unknown():
 
 def test_kinds_include_update_failed():
     # #27：自動更新 yt-dlp 後仍失敗的工作用這個 kind；translate 不會產生它（只由 jobs 的重試流程丟出）
-    from vid_snatch.errors import KINDS
+    from vid_desk.errors import KINDS
     assert "update_failed" in KINDS
     assert all(translate(RuntimeError(raw)).kind != "update_failed" for raw in ("HTTP Error 403", "x"))

@@ -12,7 +12,7 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 ## 2. 目標、非目標、反目標
 
 **目標**
-- Windows 使用者只需：下載 ZIP、解壓縮、雙擊 `vid-snatch.bat`。不需要管理員權限、不需要虛擬化、不需要事先安裝任何東西（Python、Docker、ffmpeg 都不用）。
+- Windows 使用者只需：下載 ZIP、解壓縮、雙擊 `vid-desk.bat`。不需要管理員權限、不需要虛擬化、不需要事先安裝任何東西（Python、Docker、ffmpeg 都不用）。
 - 網頁介面、使用流程、按鈕、錯誤訊息與 macOS 版完全相同。
 - 現有功能全部保留：MP3、去人聲 MP3、MP4、顯示檔案、更換資料夾、結束、更新、解除安裝、yt-dlp 自動更新。
 - 每次啟動自動檢查更新，取得的程式版本與 macOS 從 GHCR 拉到的映像檔一致（都是最新的 release 標籤 `v*`；Windows 查 GitHub `releases/latest`，macOS 拉只在推 `v*` 標籤時才更新的 `:latest` 映像檔。原本以 `main` 最新 commit 為準，後來改為以 release 標籤為準，見 issue #8）。
@@ -33,15 +33,15 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 
 ### 3.1 執行方式
 
-- 用 **uv**（Astral 的 Python 管理工具，單一 exe、免安裝、免管理員）建立獨立的 Python 3.12 環境，安裝 vid-snatch 套件及其依賴。
-- 所有檔案集中放在 **`%LOCALAPPDATA%\vid-snatch\`**，包含 uv、Python、套件環境、ffmpeg、deno、Demucs 模型、設定檔。不修改 PATH、不寫登錄檔。解除安裝時刪掉這個資料夾即為乾淨移除。
-- 下載的影音預設仍存到 `音樂\vid-snatch`（與目前一致）。
+- 用 **uv**（Astral 的 Python 管理工具，單一 exe、免安裝、免管理員）建立獨立的 Python 3.12 環境，安裝 vid-desk 套件及其依賴。
+- 所有檔案集中放在 **`%LOCALAPPDATA%\vid-desk\`**，包含 uv、Python、套件環境、ffmpeg、deno、Demucs 模型、設定檔。不修改 PATH、不寫登錄檔。解除安裝時刪掉這個資料夾即為乾淨移除。
+- 下載的影音預設仍存到 `音樂\vid-desk`（與目前一致）。
 
 ### 3.2 外部工具
 
-- **ffmpeg / ffprobe**：yt-dlp 轉檔與 Demucs 都需要。下載 Windows 靜態建置版放進 `%LOCALAPPDATA%\vid-snatch\`，由啟動腳本把所在目錄加到「該行程」的 PATH。
+- **ffmpeg / ffprobe**：yt-dlp 轉檔與 Demucs 都需要。下載 Windows 靜態建置版放進 `%LOCALAPPDATA%\vid-desk\`，由啟動腳本把所在目錄加到「該行程」的 PATH。
 - **deno**：Docker 映像檔裡裝了 deno，供 yt-dlp 解 YouTube 的 JS 驗證。Windows 版同樣下載 `deno.exe` 放進同一資料夾。
-- **Demucs htdemucs_ft 模型**：安裝時就下載。demucs 4.1 起先從 Hugging Face Hub（`adefossez/HTDemucs-ft`：`htdemucs_ft.yaml` + 4 個 `.safetensors`，共約 320 MB）讀模型，所以預載到 Hugging Face 快取（Windows：`HF_HOME = %LOCALAPPDATA%\vid-snatch\huggingface`；Docker：`/root/.cache/huggingface`），伺服器以 `HF_HUB_OFFLINE=1` 執行，第一次去人聲不必再等、也不連網。
+- **Demucs htdemucs_ft 模型**：安裝時就下載。demucs 4.1 起先從 Hugging Face Hub（`adefossez/HTDemucs-ft`：`htdemucs_ft.yaml` + 4 個 `.safetensors`，共約 320 MB）讀模型，所以預載到 Hugging Face 快取（Windows：`HF_HOME = %LOCALAPPDATA%\vid-desk\huggingface`；Docker：`/root/.cache/huggingface`），伺服器以 `HF_HUB_OFFLINE=1` 執行，第一次去人聲不必再等、也不連網。
 - PyTorch 用 CPU 版。
 
 ### 3.3 架構：沿用「宿主端動作」協定
@@ -51,27 +51,27 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 理由：`web.py`、`hostactions.py`、前端完全不用改，macOS 與 Windows 走同一套協定；PowerShell 腳本裡已寫好的 `Invoke-Reveal`、`Start-PickFolder`、主迴圈可以沿用，只把「啟動 / 停止 Docker 容器」換成「啟動 / 停止 Python 行程」。
 
 具體改變：
-- `vid-snatch.bat` 改為 3.4 所述的小啟動器；`vid-snatch.ps1` 中與 Docker 有關的部分（檢查 Docker、拉映像檔、`docker run` / `stop` / `rmi`）全部換掉。
+- `vid-desk.bat` 改為 3.4 所述的小啟動器；`vid-desk.ps1` 中與 Docker 有關的部分（檢查 Docker、拉映像檔、`docker run` / `stop` / `rmi`）全部換掉。
 - Python 伺服器以隱藏視窗的背景行程啟動，由環境變數提供 `VS_OUTPUT_DIR`、`VS_CONFIG_DIR`、`VS_HOST_OUTPUT_DIR`（原生執行時三者都是真實的 Windows 路徑）。
 - 伺服器只綁 `127.0.0.1`（目前程式在容器內綁 `0.0.0.0`，原生執行時必須改，否則同網路的人可以連進來）。
 - 關掉終端機視窗後，背景 Python 行程靠既有心跳機制約 15 秒內自行結束，與目前 Windows Docker 版行為相同。
-- 「更新 vid-snatch」：停止 Python 行程 → 重新安裝最新版套件並更新 yt-dlp → 重新啟動並開瀏覽器。
-- 「解除安裝」：停止 Python 行程 → 刪除 `%LOCALAPPDATA%\vid-snatch\` →（若使用者選擇）刪除預設下載資料夾，規則與現行相同：只刪預設的 `音樂\vid-snatch`。
+- 「更新 vid-desk」：停止 Python 行程 → 重新安裝最新版套件並更新 yt-dlp → 重新啟動並開瀏覽器。
+- 「解除安裝」：停止 Python 行程 → 刪除 `%LOCALAPPDATA%\vid-desk\` →（若使用者選擇）刪除預設下載資料夾，規則與現行相同：只刪預設的 `音樂\vid-desk`。
 - 重複雙擊：已有伺服器在跑時只開瀏覽器後結束（沿用現行規則）。
 
 ### 3.4 程式來源與更新
 
 - 更新範圍包含 **PowerShell 腳本本身**，不只 Python 套件，否則腳本出 bug 永遠修不到已解壓的使用者（我的決定）。
 - 結構分兩層：
-  - 使用者解壓縮資料夾裡的 `vid-snatch.bat` 只是穩定的小啟動器，幾乎不再修改。
-  - 它每次啟動查詢 GitHub 最新 release（`releases/latest` 的 `tag_name`，由 `release.yml` 在推 `v*` 標籤時建立），下載該標籤的封存檔，解到 `%LOCALAPPDATA%\vid-snatch\app\`，然後執行**那一份**的 `vid-snatch.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
-- 判斷「已是最新」：比對最新 release 的標籤名稱與上次安裝時寫在 `app\.commit` 的值，相同就跳過下載與重裝。`vid-snatch.ps1` 的 `-Commit` 參數與 `state\installed-commit` 也存同一個值，它只是不透明字串。
+  - 使用者解壓縮資料夾裡的 `vid-desk.bat` 只是穩定的小啟動器，幾乎不再修改。
+  - 它每次啟動查詢 GitHub 最新 release（`releases/latest` 的 `tag_name`，由 `release.yml` 在推 `v*` 標籤時建立），下載該標籤的封存檔，解到 `%LOCALAPPDATA%\vid-desk\app\`，然後執行**那一份**的 `vid-desk.ps1`。套件也從同一份原始碼安裝，腳本與程式碼版本永遠一致。這與 macOS 從 GHCR 拉 `latest` 對等。
+- 判斷「已是最新」：比對最新 release 的標籤名稱與上次安裝時寫在 `app\.commit` 的值，相同就跳過下載與重裝。`vid-desk.ps1` 的 `-Commit` 參數與 `state\installed-commit` 也存同一個值，它只是不透明字串。
 - 向下相容：第一版啟動器查的是 git 標籤 `latest` 指到的 commit sha（當時 `release.yml` 每次 `main` 更新都移動它），`.commit` 與 `installed-commit` 存 sha。改以 release 為準後，`release.yml` 只在發版時把 `latest` 標籤移到該版本，舊啟動器因此也只在發版時更新；舊安裝留下的 sha 與新啟動器拿到的標籤名稱不同，第一次會重裝一次 `app\` 與套件，之後兩邊都是標籤名稱，不會反覆重裝。
 - 標籤或 release 尚未建立時查詢失敗，走下面的備援。
-- 取得失敗時：若 `app\` 已有安裝就直接用；若從未安裝，改用解壓縮資料夾裡的 `vid-snatch.ps1` 與原始碼；兩者都不行才顯示錯誤。
+- 取得失敗時：若 `app\` 已有安裝就直接用；若從未安裝，改用解壓縮資料夾裡的 `vid-desk.ps1` 與原始碼；兩者都不行才顯示錯誤。
 - 依賴版本不鎖定，與目前 Dockerfile 一樣在安裝時解析最新相容版本（我的決定，不改動 macOS 建置）。
-  - 平常啟動、程式碼有新 commit 時：重裝 vid-snatch 套件，但已安裝且仍滿足需求的依賴不升級，所以不會每次重下 PyTorch。
-  - 按「更新 vid-snatch」時：連同所有依賴一起升級到最新，可能需要重新下載大型依賴，畫面要顯示進度。
+  - 平常啟動、程式碼有新 commit 時：重裝 vid-desk 套件，但已安裝且仍滿足需求的依賴不升級，所以不會每次重下 PyTorch。
+  - 按「更新 vid-desk」時：連同所有依賴一起升級到最新，可能需要重新下載大型依賴，畫面要顯示進度。
 - 已是最新版時，雙擊到瀏覽器打開應在 30 秒內。
 - 前提：GitHub repo 為公開（目前是），無認證即可下載封存檔與查詢最新 commit。
 
@@ -99,10 +99,10 @@ macOS 上 Docker Desktop 不需要這些步驟，維持現狀。
 使用者要求：執行檔要好找、Windows 和 Mac 分得清楚，但只要一個下載包。
 
 - 不再請使用者按 GitHub 的 `Code` → `Download ZIP`（解出來是整個 repo，執行檔混在 Dockerfile、tests、docs 之間）。
-- 改由 GitHub Actions 在推 `v*` 標籤發版時產生一個 `vid-snatch.zip`，放在該版本的 GitHub Release 並標記為 latest（固定的 `releases/latest/download` 網址），README 直接連過去。
+- 改由 GitHub Actions 在推 `v*` 標籤發版時產生一個 `vid-desk.zip`，放在該版本的 GitHub Release 並標記為 latest（固定的 `releases/latest/download` 網址），README 直接連過去。
 - 解開後最外層只有三樣東西：
-  - `vid-snatch-Windows.bat`
-  - `vid-snatch-Mac.command`
+  - `vid-desk-Windows.bat`
+  - `vid-desk-Mac.command`
   - `files` 資料夾（其餘所有檔案，使用者不用打開）
 - 執行檔在 repo 裡也改成這兩個名字，README 與畫面訊息一致。
 - 兩個執行檔都要能同時在「下載包」與「直接 clone repo」兩種配置下運作。

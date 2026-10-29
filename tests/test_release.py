@@ -11,7 +11,7 @@ ROOT = Path(__file__).parent.parent
 WORKFLOWS = ROOT / ".github/workflows"
 LAUNCHER = ROOT / "windows/launcher.ps1"
 SMOKE = ROOT / "windows/ci-smoke.ps1"
-MAIN_SCRIPT = ROOT / "vid-snatch.ps1"
+MAIN_SCRIPT = ROOT / "vid-desk.ps1"
 
 
 def load_workflow(name):
@@ -45,9 +45,9 @@ def test_release_keeps_latest_tag_for_old_launchers_and_marks_release_latest():
     scripts = "\n".join(step.get("run", "") for step in data["jobs"]["package"]["steps"])
     # 舊版啟動器查 commits/latest，這個標籤要跟著發版移動
     assert "git tag -f latest" in scripts and "git push -f origin latest" in scripts
-    # 新 release 以標籤命名、標為 latest 並附上 vid-snatch.zip；舊的 latest release 物件要清掉
+    # 新 release 以標籤命名、標為 latest 並附上 vid-desk.zip；舊的 latest release 物件要清掉
     assert 'gh release create "$TAG"' in scripts and "--latest" in scripts
-    assert 'gh release upload "$TAG" "$RUNNER_TEMP/pkg/vid-snatch.zip" --clobber' in scripts
+    assert 'gh release upload "$TAG" "$RUNNER_TEMP/pkg/vid-desk.zip" --clobber' in scripts
     assert "gh release delete latest --yes" in scripts
     # 標籤必須與 pyproject.toml 的版本一致
     assert "pyproject.toml" in scripts and '"v$version" != "$TAG"' in scripts
@@ -55,7 +55,7 @@ def test_release_keeps_latest_tag_for_old_launchers_and_marks_release_latest():
 
 def test_release_tag_check_matches_pyproject_version_format():
     version = re.search(r'^version = "(.+)"$', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M).group(1)
-    init = (ROOT / "vid_snatch/__init__.py").read_text(encoding="utf-8")
+    init = (ROOT / "vid_desk/__init__.py").read_text(encoding="utf-8")
     assert f'__version__ = "{version}"' in init
     assert re.fullmatch(r"\d+\.\d+\.\d+", version)
 

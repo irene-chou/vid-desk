@@ -1,7 +1,7 @@
-﻿# vid-snatch 穩定啟動器 (Windows)
-# 由 vid-snatch-Windows.bat 呼叫：把 GitHub 最新 release（推 v* 標籤時由 release.yml 建立）的原始碼放到
-# %LOCALAPPDATA%\vid-snatch\app\，再執行那一份的 vid-snatch.ps1。這個檔案發佈後幾乎不會再更新，請保持精簡。
-# 與 vid-snatch.ps1 的約定（見該檔開頭）：封存檔根目錄有 vid-snatch.ps1，接受 -Commit / -Upgrade，
+﻿# vid-desk 穩定啟動器 (Windows)
+# 由 vid-desk-Windows.bat 呼叫：把 GitHub 最新 release（推 v* 標籤時由 release.yml 建立）的原始碼放到
+# %LOCALAPPDATA%\vid-desk\app\，再執行那一份的 vid-desk.ps1。這個檔案發佈後幾乎不會再更新，請保持精簡。
+# 與 vid-desk.ps1 的約定（見該檔開頭）：封存檔根目錄有 vid-desk.ps1，接受 -Commit / -Upgrade，
 # 結束碼 10 代表要更新，其他照原樣傳回給 .bat。
 # 舊版啟動器查的是 git 標籤 latest 指到的 commit sha；release.yml 發版時仍會移動該標籤，所以舊版也只在發版時更新。
 # 注意：此檔需存成 UTF-8 with BOM、CRLF，並相容 Windows PowerShell 5.1。
@@ -14,8 +14,8 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch { }
 
-$Repo = 'irene-chou/vid-snatch'
-$Root = Join-Path $env:LOCALAPPDATA 'vid-snatch'
+$Repo = 'irene-chou/vid-desk'
+$Root = Join-Path $env:LOCALAPPDATA 'vid-desk'
 $AppDir = Join-Path $Root 'app'
 # launcher.ps1 所在資料夾的上一層即原始碼資料夾（repo 根目錄，或下載包的 files\）
 $BundleDir = Split-Path $PSScriptRoot -Parent
@@ -34,7 +34,7 @@ function Remove-IfExists([string]$path) {
 
 # 最新 release 的標籤名稱（例如 v0.3.0）；只接受能直接放進網址與檔名的字元
 function Get-LatestTag {
-    $r = Invoke-WebRequest -UseBasicParsing -Uri $UpdateApi -TimeoutSec 10 -UserAgent 'vid-snatch' `
+    $r = Invoke-WebRequest -UseBasicParsing -Uri $UpdateApi -TimeoutSec 10 -UserAgent 'vid-desk' `
         -Headers @{ Accept = 'application/vnd.github+json' }
     $json = [System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
     $tag = "$((ConvertFrom-Json $json).tag_name)".Trim()
@@ -64,15 +64,15 @@ function Install-Source([string]$tag) {
 
         # archive/<ref>.zip 接受標籤名稱或 commit sha（CI 冒煙測試傳的是 sha），不走 API、沒有流量限制
         Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$Repo/archive/$tag.zip" `
-            -OutFile $part -TimeoutSec 300 -UserAgent 'vid-snatch'
+            -OutFile $part -TimeoutSec 300 -UserAgent 'vid-desk'
         Move-Item -LiteralPath $part -Destination $zip
         Expand-Archive -LiteralPath $zip -DestinationPath $new
 
-        # 封存檔內有一層 vid-snatch-<版本>\（標籤 v0.3.0 會是 vid-snatch-0.3.0），取其內容
+        # 封存檔內有一層 vid-desk-<版本>\（標籤 v0.3.0 會是 vid-desk-0.3.0），取其內容
         $inner = @(Get-ChildItem -LiteralPath $new -Directory)
         if ($inner.Count -ne 1) { throw 'unexpected archive layout' }
         $src = $inner[0].FullName
-        if (-not (Test-Path -LiteralPath (Join-Path $src 'vid-snatch.ps1'))) { throw 'vid-snatch.ps1 missing' }
+        if (-not (Test-Path -LiteralPath (Join-Path $src 'vid-desk.ps1'))) { throw 'vid-desk.ps1 missing' }
         [System.IO.File]::WriteAllText((Join-Path $src '.commit'), $tag)
 
         # 先把舊版移開再換上新版，換不成就還原，避免留下半刪的 app\
@@ -98,7 +98,7 @@ function Get-SourceDir {
     try {
         $tag = Get-LatestTag
         # app\ 已是這個版本但主腳本不見了（被防毒或手動刪掉）也要重新下載
-        if ($tag -ne (Get-AppCommit) -or -not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1'))) {
+        if ($tag -ne (Get-AppCommit) -or -not (Test-Path -LiteralPath (Join-Path $AppDir 'vid-desk.ps1'))) {
             Install-Source $tag
         }
         return @{ Dir = $AppDir; Commit = $tag }
@@ -106,7 +106,7 @@ function Get-SourceDir {
         # 離線或下載失敗是正常情況，不印錯誤，改用既有的原始碼
     }
 
-    if (Test-Path -LiteralPath (Join-Path $AppDir 'vid-snatch.ps1')) {
+    if (Test-Path -LiteralPath (Join-Path $AppDir 'vid-desk.ps1')) {
         $commit = Get-AppCommit
         if (-not $commit) { $commit = 'local' }
         return @{ Dir = $AppDir; Commit = $commit }
@@ -121,11 +121,11 @@ $upgrade = $false
 $rounds = 0
 while ($true) {
     if ($rounds -ge 3) {
-        Write-Host '更新沒有完成，請關閉此視窗後重新雙擊 vid-snatch-Windows.bat'
+        Write-Host '更新沒有完成，請關閉此視窗後重新雙擊 vid-desk-Windows.bat'
         exit 1
     }
     $source = Get-SourceDir
-    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $source.Dir 'vid-snatch.ps1'),
+    $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $source.Dir 'vid-desk.ps1'),
         '-Commit', $source.Commit)
     if ($upgrade) { $psArgs += '-Upgrade' }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()

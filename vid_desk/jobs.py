@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from . import core, errors, outputs
-from .errors import VidSnatchError
+from .errors import VidDeskError
 from .outputs import Backend, Hooks, Output, OutputOptions
 
 JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
@@ -86,7 +86,7 @@ class Job:
 
 # 自動更新 yt-dlp 後仍是 extractor_outdated：error_kind 改成 update_failed，前端據此在頁面層級提示「請稍後重開」（#27、#31）
 UPDATE_FAILED_MESSAGE = "下載工具更新後仍無法下載"
-# 同時在 config 目錄寫下這個標記檔：vid-snatch.ps1 下次啟動看到就比照 -Upgrade 升級所有相依套件（deno、Python 套件）後刪掉。
+# 同時在 config 目錄寫下這個標記檔：vid-desk.ps1 下次啟動看到就比照 -Upgrade 升級所有相依套件（deno、Python 套件）後刪掉。
 # Docker / Mac 寫了也無害（Mac 每次啟動已拉最新 image，沒有人讀它）
 UPGRADE_MARKER = "upgrade-pending"
 
@@ -162,7 +162,7 @@ class JobQueue:
         if self._thread and self._thread.is_alive():
             return
         self._stopping.clear()
-        self._thread = threading.Thread(target=self._worker, daemon=True, name="vid-snatch-worker")
+        self._thread = threading.Thread(target=self._worker, daemon=True, name="vid-desk-worker")
         self._thread.start()
 
     def stop(self) -> None:
@@ -279,17 +279,17 @@ class JobQueue:
     def _run(self, job: Job) -> None:
         try:
             self._attempt(job)
-        except VidSnatchError as e:
+        except VidDeskError as e:
             if e.kind != "extractor_outdated":
                 raise
             self.backend.update_ytdlp()
             try:
                 self._attempt(job)
-            except VidSnatchError as e2:
+            except VidDeskError as e2:
                 if e2.kind != "extractor_outdated":
                     raise
                 self._mark_upgrade_pending()
-                raise VidSnatchError("update_failed", UPDATE_FAILED_MESSAGE, e2.detail) from e2
+                raise VidDeskError("update_failed", UPDATE_FAILED_MESSAGE, e2.detail) from e2
 
         self._update(job, state="done", step=job.step_total, step_name=job.steps[-1], percent=100.0,
                      finished_at=time.time(), eta_seconds=None, message="", detail="", error_kind=None)

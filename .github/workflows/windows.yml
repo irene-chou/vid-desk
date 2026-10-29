@@ -20,7 +20,7 @@ jobs:
         run: |
           $PSVersionTable.PSVersion
           $failed = $false
-          foreach ($f in @('vid-snatch.ps1', 'windows\launcher.ps1', 'windows\ci-smoke.ps1')) {
+          foreach ($f in @('vid-desk.ps1', 'windows\launcher.ps1', 'windows\ci-smoke.ps1')) {
             $path = (Resolve-Path -LiteralPath $f).Path
             $tokens = $null
             $errors = $null
@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # http.server 用來佔住 8080；vid-snatch 本身用 uv 自己下載的 Python
+      # http.server 用來佔住 8080；vid-desk 本身用 uv 自己下載的 Python
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

@@ -1,9 +1,9 @@
 import threading
 from pathlib import Path
 import pytest
-from vid_snatch.jobs import JobQueue
-from vid_snatch.outputs import OutputOptions
-from vid_snatch.errors import VidSnatchError
+from vid_desk.jobs import JobQueue
+from vid_desk.outputs import OutputOptions
+from vid_desk.errors import VidDeskError
 
 class FakeBackend:
     def __init__(self):
@@ -12,14 +12,14 @@ class FakeBackend:
     def fetch_title(self, url):
         if self.title_failures:
             self.title_failures -= 1
-            raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "Unable to extract title")
+            raise VidDeskError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "Unable to extract title")
         return "Same Title"
     def download_audio(self, url, output_dir, filename, audio_format="mp3", on_progress=None, *, overwrite=False):
         self.overwrites.append(overwrite)
         self.calls.append(("download_audio", audio_format))
         if self.fail_once:
             self.fail_once = False
-            raise VidSnatchError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "403")
+            raise VidDeskError("extractor_outdated", "YouTube 改版，正在自動更新下載工具…", "403")
         on_progress and on_progress(50.0)
         on_progress and on_progress(None)
         p = output_dir / f"{filename}.{audio_format}"; p.write_bytes(b"x" * 10); return p
@@ -139,8 +139,8 @@ def test_title_outdated_twice_fails_with_message(q):
     assert [o.state for o in job.outputs] == ["failed"]
 
 def test_update_failed_writes_upgrade_marker(tmp_path):
-    # #31：自動更新後仍失敗 → 在指定路徑寫標記檔（目錄不存在就建）；vid-snatch.ps1 下次啟動據此升級所有相依套件
-    from vid_snatch.jobs import UPGRADE_MARKER
+    # #31：自動更新後仍失敗 → 在指定路徑寫標記檔（目錄不存在就建）；vid-desk.ps1 下次啟動據此升級所有相依套件
+    from vid_desk.jobs import UPGRADE_MARKER
     assert UPGRADE_MARKER == "upgrade-pending"
     marker = tmp_path / "cfg" / UPGRADE_MARKER
     q = JobQueue(tmp_path, backend=FakeBackend(), upgrade_marker=marker); q.start()
@@ -155,7 +155,7 @@ def test_update_failed_writes_upgrade_marker(tmp_path):
 def test_other_failures_do_not_write_upgrade_marker(tmp_path):
     class Private(FakeBackend):
         def download_audio(self, *a, **k):
-            raise VidSnatchError("private", "這是私人影片", "Private video")
+            raise VidDeskError("private", "這是私人影片", "Private video")
 
     marker = tmp_path / "cfg" / "upgrade-pending"
     q = JobQueue(tmp_path, backend=Private(), upgrade_marker=marker); q.start()

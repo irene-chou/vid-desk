@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 
-:: vid-snatch 一鍵啟動腳本 (Windows)
+:: vid-desk 一鍵啟動腳本 (Windows)
 :: 雙擊此檔案即可使用；實際流程在 windows\launcher.ps1
 :: 下載包配置的啟動器在 files\windows\，repo 配置在 windows\
 
@@ -19,7 +19,7 @@ exit /b %CODE%
 :missing
 :: 直接在 zip 裡雙擊時，檔案總管只會把這個 .bat 解到暫存資料夾，旁邊沒有 launcher.ps1
 echo.
-echo 請先把 vid-snatch.zip 解壓縮，再雙擊解壓後資料夾裡的 vid-snatch-Windows.bat
+echo 請先把 vid-desk.zip 解壓縮，再雙擊解壓後資料夾裡的 vid-desk-Windows.bat
 echo.
 pause
 exit /b 1

@@ -1,5 +1,5 @@
 import threading
-from vid_snatch.hostactions import HostActionQueue
+from vid_desk.hostactions import HostActionQueue
 
 
 def test_push_poll_once():

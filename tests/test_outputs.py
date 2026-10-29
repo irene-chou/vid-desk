@@ -1,6 +1,6 @@
 import pytest
 
-from vid_snatch.outputs import KINDS, VERSIONS, OutputOptions
+from vid_desk.outputs import KINDS, VERSIONS, OutputOptions
 
 
 def test_from_mode_matches_cli_modes():
@@ -59,7 +59,7 @@ def test_constants():
 def test_core_and_fake_backend_provide_every_pipeline_call():
     # 流程呼叫的名稱若改了，真實的 core 與測試用的 FakeBackend 都要跟上
     from tests.test_jobs import FakeBackend
-    from vid_snatch import core
+    from vid_desk import core
 
     for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate", "update_ytdlp"):
         assert callable(getattr(core, name)), name

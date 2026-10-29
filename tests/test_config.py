@@ -4,15 +4,15 @@ import sys
 
 import pytest
 
-from vid_snatch import config
-from vid_snatch.config import read_output_dir, read_settings, write_output_dir, write_settings
+from vid_desk import config
+from vid_desk.config import read_output_dir, read_settings, write_output_dir, write_settings
 
 
 def test_roundtrip(tmp_path):
     assert read_output_dir(tmp_path) is None
-    write_output_dir(tmp_path, "/Users/me/Music/vid-snatch")
-    assert read_output_dir(tmp_path) == "/Users/me/Music/vid-snatch"
-    assert (tmp_path / "config").read_text(encoding="utf-8") == "output_dir=/Users/me/Music/vid-snatch\n"
+    write_output_dir(tmp_path, "/Users/me/Music/vid-desk")
+    assert read_output_dir(tmp_path) == "/Users/me/Music/vid-desk"
+    assert (tmp_path / "config").read_text(encoding="utf-8") == "output_dir=/Users/me/Music/vid-desk\n"
 
 
 def test_reads_existing_bash_format(tmp_path):
@@ -62,7 +62,7 @@ def test_value_may_contain_equals_sign(tmp_path):
 
 # ---- 與啟動腳本的相容性：bash / bat / ps1 只讀 `output_dir=` 那一行 ----
 
-MULTI = {"output_dir": "/Users/me/Music/vid-snatch", "audio_format": "flac",
+MULTI = {"output_dir": "/Users/me/Music/vid-desk", "audio_format": "flac",
          "demucs_model": "htdemucs", "video_max_height": None}
 
 
@@ -75,7 +75,7 @@ def _write_multi(tmp_path):
 def test_launcher_style_parsers_read_output_dir(tmp_path):
     path = _write_multi(tmp_path)
     lines = path.read_text(encoding="utf-8").splitlines()
-    # vid-snatch.ps1 Load-Config：第一行以 output_dir= 開頭者，Substring(11)
+    # vid-desk.ps1 Load-Config：第一行以 output_dir= 開頭者，Substring(11)
     ps1 = next(line[11:].strip() for line in lines if line.startswith("output_dir="))
     assert ps1 == MULTI["output_dir"]
     # 檔案沒有 BOM，PowerShell 5.1 的 -Encoding UTF8 與 bash grep 才不會把第一行讀壞
@@ -86,7 +86,7 @@ def test_launcher_style_parsers_read_output_dir(tmp_path):
 @pytest.mark.skipif(sys.platform == "win32" or not shutil.which("bash"), reason="需要 bash/grep/cut")
 def test_mac_command_grep_reads_output_dir(tmp_path):
     path = _write_multi(tmp_path)
-    # 與 vid-snatch-Mac.command load_config 相同的管線
+    # 與 vid-desk-Mac.command load_config 相同的管線
     out = subprocess.run(["bash", "-c", f"grep '^output_dir=' \"{path}\" | cut -d'=' -f2-"],
                          capture_output=True, text=True, check=True).stdout
     assert out.strip() == MULTI["output_dir"]

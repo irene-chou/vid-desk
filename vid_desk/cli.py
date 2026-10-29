@@ -1,14 +1,14 @@
-"""vid-snatch command line interface."""
+"""vid-desk command line interface."""
 
 import argparse
 import shutil
 import sys
 from pathlib import Path
 
-from vid_snatch import core, outputs
-from vid_snatch.core import DEFAULT_OUTPUT_DIR, sanitize_filename, validate_url
-from vid_snatch.errors import VidSnatchError
-from vid_snatch.outputs import Hooks, OutputOptions
+from vid_desk import core, outputs
+from vid_desk.core import DEFAULT_OUTPUT_DIR, sanitize_filename, validate_url
+from vid_desk.errors import VidDeskError
+from vid_desk.outputs import Hooks, OutputOptions
 
 
 def check_dependencies() -> bool:
@@ -21,7 +21,7 @@ def check_dependencies() -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="vid-snatch",
+        prog="vid-desk",
         description="Download YouTube audio/video, optionally remove vocals.",
     )
     parser.add_argument("url", nargs="?", type=validate_url, help="YouTube video URL")
@@ -96,7 +96,7 @@ def main():
     args = parser.parse_args()
 
     if args.web:
-        from vid_snatch.webserver import run_web
+        from vid_desk.webserver import run_web
 
         return run_web(args.port)
     if args.url is None:
@@ -107,7 +107,7 @@ def main():
 
     try:
         run(args)
-    except VidSnatchError as e:
+    except VidDeskError as e:
         print(f"\n{e.message}")
         if e.detail:
             print(e.detail)

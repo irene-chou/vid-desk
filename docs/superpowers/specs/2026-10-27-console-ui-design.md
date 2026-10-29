@@ -4,7 +4,7 @@
 
 ## 目的
 
-現有 `vid_snatch/static/index.html` 功能完整但簡陋。這次改版目標是質感與直觀，不拘泥原有排版。同時納入兩個功能需求：輸出選項改為 checkbox 多選（含細項），排隊卡片顯示更多細節。
+現有 `vid_desk/static/index.html` 功能完整但簡陋。這次改版目標是質感與直觀，不拘泥原有排版。同時納入兩個功能需求：輸出選項改為 checkbox 多選（含細項），排隊卡片顯示更多細節。
 
 ## 目標 / 非目標
 
@@ -40,8 +40,8 @@
 
 - 桌面：雙欄 grid（5:6），左欄輸入面板，右欄排隊。手機（容器 ≤ 760px）堆疊，輸入在上。
 - 頂部：左側 logo + 名稱 + 版本號（`v0.3.1`，等寬小字、`--muted` 色，來自 `GET /api/settings` 的 `version`；取不到就不顯示）；右側兩顆 `.ibtn`：主題切換（#37，太陽 / 月亮）與設定齒輪，間距 8px。#25 之後不再有四個狀態計數，排隊卡片本身已足夠。
-- 頁面層級橫幅（#31）：頁首下方、輸入區上方，跨兩欄（`#update-failed`，`role="status"`，`--warn` 色底框 + 警示圖示，沒有按鈕）。任一工作 `error_kind == "update_failed"` 時顯示「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。」，不分平台。純函式 `showsUpdateFailedBanner(jobs)`：有這類失敗、且 `created_at` 在它之後沒有任何 `done` 的工作才顯示；之後有工作成功（例如重試成功）或「清除已完成」把這類卡片移掉就收起。每次卡片重畫 / 清除時由 `refreshQueueChrome()` 重算，資料來自卡片 `dataset`（`errorKind`、`createdAt`）。
-- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束（#26 的「主題」三段式已於 #37 移到頁首按鈕，設定裡不再有主題選項）；「進階」收合：只有解除安裝（「更新 vid-snatch」已於 #27 移除；#31 之後頁面上沒有任何「更新」鈕，改由頁面橫幅請使用者重開），狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
+- 頁面層級橫幅（#31）：頁首下方、輸入區上方，跨兩欄（`#update-failed`，`role="status"`，`--warn` 色底框 + 警示圖示，沒有按鈕）。任一工作 `error_kind == "update_failed"` 時顯示「YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-desk 再試。」，不分平台。純函式 `showsUpdateFailedBanner(jobs)`：有這類失敗、且 `created_at` 在它之後沒有任何 `done` 的工作才顯示；之後有工作成功（例如重試成功）或「清除已完成」把這類卡片移掉就收起。每次卡片重畫 / 清除時由 `refreshQueueChrome()` 重算，資料來自卡片 `dataset`（`errorKind`、`createdAt`）。
+- 設定：齒輪開啟置中 modal（原生 `<dialog>` + `showModal()`，與 `ask()` 共用樣式與 backdrop），開關不推擠版面。桌面 480px 置中，≤ 390px 貼齊左右 16px 邊距；內容過高時 dialog 內捲、頁面不捲。關閉：右上關閉鈕、Esc、點 backdrop，關閉後焦點回齒輪。內容：下載資料夾 / 更換資料夾 / 結束（#26 的「主題」三段式已於 #37 移到頁首按鈕，設定裡不再有主題選項）；「進階」收合：只有解除安裝（「更新 vid-desk」已於 #27 移除；#31 之後頁面上沒有任何「更新」鈕，改由頁面橫幅請使用者重開），狀態訊息與按鈕列間距 8px。從設定內觸發 `ask()` 時疊在設定上層，關閉後回到設定。
 - 左欄由上到下：網址（textarea，右上貼上鈕）、輸出（兩張選項卡）、檔名（每個網址一列，上方小字為網址）、開始。
 - 右欄：「進行中與排隊」區；「已完成」分隔線（右側清除鈕）；卡片依新到舊。
 
@@ -62,7 +62,7 @@
 - 細節列的「已存檔名與大小」每個完成的輸出一列（失敗工作裡已完成的輸出也列）。
 - 耗時：收到 job 時記下 `elapsed_seconds` / `eta_seconds` 與本機時刻，之後前端每秒加上本機經過的時間；不拿本機時鐘去減伺服器的 `started_at`（避免時鐘差）。預估總時 = 收到時的已耗時 + `eta_seconds`，下一則 SSE 前不會往下掉；已耗時超過預估就顯示相同數字。頁面上沒有進行中的卡片時計時器停掉。
 - 分組：`#jobs`（進行中與排隊）與 `#jobs-done`（已完成）兩個 `ul`；工作變成 `done` / `failed` / `cancelled` 時卡片搬到已完成區最上面。「清除已完成」只在前端隱藏（記住 id，SSE 重連重播時不畫回來），後端不刪。
-- 讓「重開」真的有用（#31）：工作以 `update_failed` 結束時，後端（`JobQueue`，由 `webserver.run_web` 傳入路徑）在 config 目錄寫標記檔 `upgrade-pending`（`vid_snatch.jobs.UPGRADE_MARKER`）。`vid-snatch.ps1` 啟動時若看到標記，先刪掉標記再比照 `-Upgrade` 升級所有相依套件（deno、Python 套件）；先刪再升級是為了升級失敗（例如離線）時下次啟動走一般流程，不會每次都重跑整套升級，若升級後仍失敗後端會再寫一次。`launcher.ps1`、`/api/rebuild`、結束碼 10 流程不動；Docker / Mac 也會寫標記但沒有人讀，無害（Mac 每次啟動已拉最新 image）。
+- 讓「重開」真的有用（#31）：工作以 `update_failed` 結束時，後端（`JobQueue`，由 `webserver.run_web` 傳入路徑）在 config 目錄寫標記檔 `upgrade-pending`（`vid_desk.jobs.UPGRADE_MARKER`）。`vid-desk.ps1` 啟動時若看到標記，先刪掉標記再比照 `-Upgrade` 升級所有相依套件（deno、Python 套件）；先刪再升級是為了升級失敗（例如離線）時下次啟動走一般流程，不會每次都重跑整套升級，若升級後仍失敗後端會再寫一次。`launcher.ps1`、`/api/rebuild`、結束碼 10 流程不動；Docker / Mac 也會寫標記但沒有人讀，無害（Mac 每次啟動已拉最新 image）。
 - 已取消（`cancelled`）：卡片併入「已完成」區，狀態文字「已取消」、圖示 x、色條與排隊相同（`--line`），動作列只有「重試」（重試會建立新工作）；頂部計數不算已取消。
 - 「查看詳情」展開狀態以 id 記住，SSE 重畫卡片後維持展開。
 
@@ -71,7 +71,7 @@
 - 字體：IBM Plex Sans（UI）、IBM Plex Mono（網址、檔名、數字、狀態）、中文 Noto Sans TC；皆由 Google Fonts 載入，離線退回 `-apple-system, "PingFang TC", "Microsoft JhengHei"` 與 `ui-monospace, Menlo, Consolas`。
 - 淺色：bg #f5f6f8、panel #ffffff、fg #16181d、muted #6b7280、line #e2e4e9、sub #eef0f3、accent #0f766e（字 #ffffff）、ok #15803d、bad #b91c1c、warn #b45309。
 - 深色：bg #0f1114、panel #171a1f、fg #e6e8ec、muted #8b919c、line #262a31、sub #1f232a、accent #2dd4bf（字 #06201c）、ok #4ade80、bad #f87171、warn #fbbf24。
-- 深淺切換（#26 / #37）：頁首齒輪左邊一顆 `.ibtn`（`#theme-toggle`）。未手動選過時跟隨系統，系統切換深淺頁面即時跟著變；點一下切到與目前實際顯示相反的主題並固定、存 `localStorage`（key `vid-snatch.theme`，值 `light` / `dark`，不經後端），之後不再跟隨系統。圖示與 `aria-label` / `title` 都是「點了會切到的主題」：淺色時畫月亮「切換為深色」，深色時畫太陽「切換為淺色」；跟隨系統時用 `matchMedia("(prefers-color-scheme: dark)")` 的 `change` 事件更新圖示。純函式 `resolveTheme(theme, systemDark)`（實際顯示）與 `nextTheme(effective)`（下一個值）在 head 的 `@@theme` 區塊，`tests/theme.test.mjs` 以 node 測。存值 `system`（#26 舊值）或不存在 → 跟隨系統；`light` / `dark` 照舊。淺色 token 在 `:root`（含 `color-scheme: light dark`，沒有 `data-theme` 就跟隨系統）。深色 token 寫兩份、必須同步（`tests/test_static.py` 會比對）：`@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }` 與 `:root[data-theme="dark"]`，兩處都設 `color-scheme: dark`；`:root[data-theme="light"]` 設 `color-scheme: light`。不用 `light-dark()`（需要 Safari 17.5+，舊 Safari 會整頁失色）。`color-scheme` 跟著切，原生表單、捲軸、dialog backdrop 跟著變。`<head>` 最前面的 inline script 在第一次繪製前就從 `localStorage` 讀回並設好 `data-theme`，開頁不閃色；讀不到（沒存、值不合法、`localStorage` 不可用）就當跟隨系統，`data-theme` 不設。
+- 深淺切換（#26 / #37）：頁首齒輪左邊一顆 `.ibtn`（`#theme-toggle`）。未手動選過時跟隨系統，系統切換深淺頁面即時跟著變；點一下切到與目前實際顯示相反的主題並固定、存 `localStorage`（key `vid-desk.theme`，值 `light` / `dark`，不經後端），之後不再跟隨系統。圖示與 `aria-label` / `title` 都是「點了會切到的主題」：淺色時畫月亮「切換為深色」，深色時畫太陽「切換為淺色」；跟隨系統時用 `matchMedia("(prefers-color-scheme: dark)")` 的 `change` 事件更新圖示。純函式 `resolveTheme(theme, systemDark)`（實際顯示）與 `nextTheme(effective)`（下一個值）在 head 的 `@@theme` 區塊，`tests/theme.test.mjs` 以 node 測。存值 `system`（#26 舊值）或不存在 → 跟隨系統；`light` / `dark` 照舊。淺色 token 在 `:root`（含 `color-scheme: light dark`，沒有 `data-theme` 就跟隨系統）。深色 token 寫兩份、必須同步（`tests/test_static.py` 會比對）：`@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }` 與 `:root[data-theme="dark"]`，兩處都設 `color-scheme: dark`；`:root[data-theme="light"]` 設 `color-scheme: light`。不用 `light-dark()`（需要 Safari 17.5+，舊 Safari 會整頁失色）。`color-scheme` 跟著切，原生表單、捲軸、dialog backdrop 跟著變。`<head>` 最前面的 inline script 在第一次繪製前就從 `localStorage` 讀回並設好 `data-theme`，開頁不閃色；讀不到（沒存、值不合法、`localStorage` 不可用）就當跟隨系統，`data-theme` 不設。
 - 圓角：面板 12px、選項卡 10px、按鈕 8px、膠囊 999px。圖示鈕 34px，小型 28px。
 - 圖示：Lucide，24 格 2px 線，內嵌一個 `<svg><symbol>` sprite（mockup 內已含全部 symbol，可直接複製）。
 - 動畫：轉圈 1s linear；`prefers-reduced-motion` 時停止。
@@ -89,7 +89,7 @@
 - 細項（格式、模型、畫質）存進設定檔並能讀回。
 - 音檔 M4A/WAV/FLAC、影片畫質上限、demucs 模型切換、人聲輸出。
 
-定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` / `DELETE` 都要帶 `X-Vid-Snatch: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
+定案的 API 如下，#10（輸入面板）與 #11（排隊卡片）以此為準。所有 `POST` / `DELETE` 都要帶 `X-Vid-Desk: 1`，錯誤回應一律 `{"message": "<中文>"}`（語意錯誤 400；型別或列舉不符由 FastAPI 回 422）。
 
 ## 後端 API（#9 定案，#11 補取消）
 
@@ -182,7 +182,7 @@ SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位�
 
 ### `DELETE /api/jobs/{id}`（#11 新增）
 
-取消排隊中的工作。需帶 `X-Vid-Snatch: 1`（與 `POST` 相同，防 CSRF）。
+取消排隊中的工作。需帶 `X-Vid-Desk: 1`（與 `POST` 相同，防 CSRF）。
 
 - 只對 `state == "queued"` 生效：工作 `state` 改為 `cancelled`、`finished_at` 設為當下、`queue_position` 變 `null`，從佇列移除（worker 取到已取消的工作會直接跳過）；後面排隊中的工作 `queue_position` 往前補，每張都會收到一則 SSE 更新。回應 200 + 取消後的 job dict；同一則 job 也會經 `/api/events` 推送。
 - 其他狀態（執行中、完成、失敗、已取消）回 409 `{"message": "只能取消排隊中的工作"}`；找不到回 404 `{"message": "找不到這個工作"}`。
@@ -191,10 +191,10 @@ SSE：`GET /api/events` 連上先重播所有既有工作，之後任一欄位�
 ### `GET /api/settings` / `POST /api/settings`
 
 ```json
-{ "output_dir": "/Users/me/Music/vid-snatch", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null, "version": "0.3.1" }
+{ "output_dir": "/Users/me/Music/vid-desk", "audio_format": "mp3", "demucs_model": "htdemucs_ft", "video_max_height": null, "version": "0.3.1" }
 ```
 
-- `GET` 回傳上述欄位；`version` 是 `vid_snatch.__version__`（唯讀，頁首顯示用；`POST` 送來忽略）。#27 加的 `can_upgrade` 與 `VS_CAN_UPGRADE` 已於 #31 移除。`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
+- `GET` 回傳上述欄位；`version` 是 `vid_desk.__version__`（唯讀，頁首顯示用；`POST` 送來忽略）。#27 加的 `can_upgrade` 與 `VS_CAN_UPGRADE` 已於 #31 移除。`output_dir` 是目前執行中的資料夾，細項來自設定檔，缺少或不合法的 key 用預設值（`mp3` / `htdemucs_ft` / `null`）補齊。舊設定檔殘留的 `audio_bitrate=` 行安靜略過，下次寫回時丟掉；`POST` 收到 `audio_bitrate` 也忽略不報 422（#18）。
 - `POST` 可只送要改的欄位；沒送的維持原值。`video_max_height` 送 `null` 表示不限畫質。回應 = 更新後的欄位（含 `version`）+ `restart_required`（只有送了 `output_dir` 才是 `true`）。`output_dir` 空白回 400。
 - 「版本」（原曲 / 伴奏 / 人聲）不存設定，每次載入回到預設「原曲」。
 - 設定檔 `config` 每行 `key=value`，`output_dir` 永遠在第一行；bash / bat / ps1 啟動腳本只讀那一行，其餘行會被略過。

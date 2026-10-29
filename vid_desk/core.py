@@ -1,4 +1,4 @@
-"""vid-snatch: Download YouTube audio/video and optionally remove vocals."""
+"""vid-desk: Download YouTube audio/video and optionally remove vocals."""
 
 import argparse
 import re
@@ -9,8 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from vid_snatch.errors import VidSnatchError, translate
-from vid_snatch.models import DEMUCS_MODEL, DEMUCS_MODELS
+from vid_desk.errors import VidDeskError, translate
+from vid_desk.models import DEMUCS_MODEL, DEMUCS_MODELS
 
 # 百分比 0-100；None 表示不定進度
 ProgressCallback = Callable[[float | None], None]

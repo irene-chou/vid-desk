@@ -1,7 +1,7 @@
 import sys
 import types
 
-from vid_snatch import core, models
+from vid_desk import core, models
 
 
 def test_core_uses_models_constant():

@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, "..", "vid_snatch", "static", "index.html"), "utf8");
+const html = readFileSync(join(here, "..", "vid_desk", "static", "index.html"), "utf8");
 const block = html.split("// @@outputs-state-begin")[1].split("// @@outputs-state-end")[0];
 // 在同一個 realm 執行，deepEqual 才不會因 prototype 不同而失敗
 const api = vm.runInThisContext(

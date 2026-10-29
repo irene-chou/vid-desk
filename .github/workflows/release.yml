@@ -43,10 +43,10 @@ jobs:
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release edit "$TAG" --draft=false --prerelease=false --latest
           else
-            gh release create "$TAG" --title "vid-snatch $TAG" --latest --generate-notes \
-              --notes "下載 vid-snatch.zip 並解壓縮：Windows 雙擊 vid-snatch-Windows.bat，Mac 雙擊 vid-snatch-Mac.command。"
+            gh release create "$TAG" --title "vid-desk $TAG" --latest --generate-notes \
+              --notes "下載 vid-desk.zip 並解壓縮：Windows 雙擊 vid-desk-Windows.bat，Mac 雙擊 vid-desk-Mac.command。"
           fi
-          gh release upload "$TAG" "$RUNNER_TEMP/pkg/vid-snatch.zip" --clobber
+          gh release upload "$TAG" "$RUNNER_TEMP/pkg/vid-desk.zip" --clobber
 
       # 舊版 windows/launcher.ps1（使用者手上無法更新的那一份）每次啟動查 git 標籤 latest 指到的 commit，
       # 所以發版時把 latest 移到這個 commit，舊啟動器才會拿到新版；平常 push main 不再移動。
@@ -59,7 +59,7 @@ jobs:
           git push -f origin latest
 
       # 以前每次 push main 都重傳一個名為 latest 的 release；新的 v* release 建好後把它刪掉，
-      # GitHub 的「latest release」與 releases/latest/download/vid-snatch.zip 就只會指到 v* release。
+      # GitHub 的「latest release」與 releases/latest/download/vid-desk.zip 就只會指到 v* release。
       # 只刪 release 物件、保留 git 標籤 latest（上一步才剛移好給舊啟動器用）。
       - name: 清掉舊的 latest release
         env:

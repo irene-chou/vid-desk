@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(here, "..", "vid_snatch", "static", "index.html"), "utf8");
+const html = readFileSync(join(here, "..", "vid_desk", "static", "index.html"), "utf8");
 const block = html.split("// @@theme-begin")[1].split("// @@theme-end")[0];
 const api = vm.runInThisContext(
   `(function () {\n${block}\nreturn { THEME_KEY, THEMES, parseTheme, resolveTheme, nextTheme, readTheme, writeTheme, applyTheme }; })()`,
@@ -37,7 +37,7 @@ function fakeRoot() {
 }
 
 test("key 與三個選項固定", () => {
-  assert.equal(api.THEME_KEY, "vid-snatch.theme");
+  assert.equal(api.THEME_KEY, "vid-desk.theme");
   assert.deepEqual(api.THEMES, ["system", "light", "dark"]);
 });
 
@@ -74,15 +74,15 @@ test("點兩下回到原本的主題，但已固定、不再跟隨系統", () =>
     api.writeTheme(() => storage, theme);
   }
   assert.equal(root.getAttribute("data-theme"), "dark");
-  assert.deepEqual([...storage.map], [["vid-snatch.theme", "dark"]]);
+  assert.deepEqual([...storage.map], [["vid-desk.theme", "dark"]]);
   assert.equal(api.resolveTheme(api.readTheme(() => storage), false), "dark");
 });
 
 test("readTheme：讀到存值就用，沒存或存了怪值當跟隨系統", () => {
-  assert.equal(api.readTheme(() => fakeStorage({ "vid-snatch.theme": "dark" })), "dark");
-  assert.equal(api.readTheme(() => fakeStorage({ "vid-snatch.theme": "light" })), "light");
+  assert.equal(api.readTheme(() => fakeStorage({ "vid-desk.theme": "dark" })), "dark");
+  assert.equal(api.readTheme(() => fakeStorage({ "vid-desk.theme": "light" })), "light");
   assert.equal(api.readTheme(() => fakeStorage()), "system");
-  assert.equal(api.readTheme(() => fakeStorage({ "vid-snatch.theme": "neon" })), "system");
+  assert.equal(api.readTheme(() => fakeStorage({ "vid-desk.theme": "neon" })), "system");
 });
 
 test("readTheme：localStorage 不可用（取用或 getItem 丟例外）回跟隨系統，不往外拋", () => {
@@ -94,9 +94,9 @@ test("readTheme：localStorage 不可用（取用或 getItem 丟例外）回跟�
 test("writeTheme：淺 / 深色寫入 key；跟隨系統把 key 刪掉", () => {
   const storage = fakeStorage();
   api.writeTheme(() => storage, "dark");
-  assert.deepEqual([...storage.map], [["vid-snatch.theme", "dark"]]);
+  assert.deepEqual([...storage.map], [["vid-desk.theme", "dark"]]);
   api.writeTheme(() => storage, "light");
-  assert.deepEqual([...storage.map], [["vid-snatch.theme", "light"]]);
+  assert.deepEqual([...storage.map], [["vid-desk.theme", "light"]]);
   api.writeTheme(() => storage, "system");
   assert.deepEqual([...storage.map], []);
 });

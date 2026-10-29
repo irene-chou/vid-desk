@@ -1,11 +1,11 @@
-# vid-snatch 網頁介面設計
+# vid-desk 網頁介面設計
 
 日期：2026-10-26
 狀態：已確認
 
 ## 1. 意圖與動機
 
-vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat`，在終端機選單裡按數字、貼網址、再回答檔名。對非工程背景的使用者而言，終端機本身就是門檻：黑底白字、yt-dlp 與 Demucs 的原始 log、英文錯誤訊息、出錯時視窗直接消失。
+vid-desk 目前的操作方式是雙擊 `vid-desk.command` / `vid-desk.bat`，在終端機選單裡按數字、貼網址、再回答檔名。對非工程背景的使用者而言，終端機本身就是門檻：黑底白字、yt-dlp 與 Demucs 的原始 log、英文錯誤訊息、出錯時視窗直接消失。
 
 這份設計把操作介面搬到瀏覽器：使用者仍然雙擊同一個檔案，但接下來看到的是一個乾淨的網頁，貼網址、按按鈕、看進度條、完成後打開資料夾。終端機視窗退居幕後。
 
@@ -18,7 +18,7 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 - 三種結果（MP3、去人聲 MP3、MP4）一眼可選，檔名預填影片標題，可改。
 - 處理過程有可讀的進度（步驟名稱 + 百分比），不露出原始 log。
 - 出錯時給一句中文人話，並告訴使用者可以做什麼。
-- 既有 CLI 用法（`docker run ... vid-snatch "URL" --no-vocals`）保持可用。
+- 既有 CLI 用法（`docker run ... vid-desk "URL" --no-vocals`）保持可用。
 
 **非目標（這次不做）**
 - 不做 PyInstaller / 原生 `.app` 打包，仍以 Docker 為執行環境。
@@ -39,24 +39,24 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 - 輸出路徑靠 volume 掛載（`-v "$OUTPUT_DIR:/app/output"`），容器啟動後不能改。
 - 使用者機器上只能假設有 Docker Desktop，不假設有 Python、Node。
 - 前端不能有 build step（不想在 Docker build 裡多裝 Node）。
-- 儲存庫 `irene-chou/vid-snatch` 是公開的，GHCR 可匿名 pull。
+- 儲存庫 `irene-chou/vid-desk` 是公開的，GHCR 可匿名 pull。
 
 ## 4. 整體架構
 
 ```
-使用者雙擊 vid-snatch.command
+使用者雙擊 vid-desk.command
         │
         ▼
 啟動腳本（宿主機 bash / bat）
   1. 檢查 Docker、必要時啟動 Docker Desktop
   2. 取得映像檔（優先 pull GHCR，失敗則本地 build）
-  3. docker run -d -p <port>:8080 -v 輸出資料夾 -v 設定資料夾 vid-snatch --web
+  3. docker run -d -p <port>:8080 -v 輸出資料夾 -v 設定資料夾 vid-desk --web
   4. 等 /api/health 回 200，開瀏覽器
   5. 進入「宿主機助手迴圈」：輪詢 /api/host-actions，代容器執行宿主端動作
   6. 視窗被關 / Ctrl-C / 收到 shutdown → docker stop
         │
         ▼
-容器內 FastAPI（vid_snatch.py --web）
+容器內 FastAPI（vid_desk.py --web）
   - 提供靜態單頁 HTML
   - /api/info      取影片標題（預填檔名）
   - /api/jobs      建立工作（可一次多筆）
@@ -91,12 +91,12 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 
 ### 4.3 重複啟動與 Port
 
-- 啟動腳本先 `docker ps --filter name=vid-snatch`。若已有在跑的容器，不再開第二個，直接讀它的 port、開瀏覽器、進入助手迴圈（接管）。這避免使用者重複雙擊時開出兩個容器寫同一個資料夾。
+- 啟動腳本先 `docker ps --filter name=vid-desk`。若已有在跑的容器，不再開第二個，直接讀它的 port、開瀏覽器、進入助手迴圈（接管）。這避免使用者重複雙擊時開出兩個容器寫同一個資料夾。
 - 沒有在跑的容器時，預設 port 8080；被其他程式占用（macOS `lsof -i`，Windows `netstat`）就往上找空的，並把實際 port 用在 `-p` 與開啟的網址上。
 
 ### 4.4 誤關瀏覽器分頁
 
-終端機視窗保留一行：「vid-snatch 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。」助手迴圈以 1 秒逾時讀 stdin，讀到 Enter 就再 `open` 一次網址。
+終端機視窗保留一行：「vid-desk 執行中，操作請看瀏覽器視窗。誤關了？按 Enter 重新開啟。關閉此視窗即結束。」助手迴圈以 1 秒逾時讀 stdin，讀到 Enter 就再 `open` 一次網址。
 
 ## 5. 網頁介面
 
@@ -106,7 +106,7 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 
 ```
 ┌────────────────────────────────────────────┐
-│  vid-snatch                      ⚙ 設定     │
+│  vid-desk                      ⚙ 設定     │
 ├────────────────────────────────────────────┤
 │  貼上 YouTube 網址（一行一個）               │
 │  ┌──────────────────────────────┐ [貼上]    │
@@ -150,7 +150,7 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 
 - 顯示目前輸出資料夾。
 - 「選擇資料夾」按鈕 → host action `pick_folder` → 回填 → 寫入設定檔 → 顯示「下次啟動生效」。
-- 「結束 vid-snatch」按鈕 → host action `shutdown`。
+- 「結束 vid-desk」按鈕 → host action `shutdown`。
 - 「進階」折疊區：顯示版本、「更新程式」（host action `rebuild`，頁面顯示「更新中，瀏覽器會自動重新開啟」）、「解除安裝」（網頁先問「是否一併刪除已下載的檔案？」，再送 host action `uninstall` 帶參數）。
 
 ### 5.4 錯誤訊息中文對照
@@ -172,7 +172,7 @@ vid-snatch 目前的操作方式是雙擊 `vid-snatch.command` / `vid-snatch.bat
 ### 6.1 程式結構
 
 ```
-vid_snatch/
+vid_desk/
   __init__.py
   cli.py          原本的 main()，--web 時轉交 web.py
   core.py         fetch_title / download_audio / download_video / remove_vocals
@@ -189,7 +189,7 @@ vid_snatch/
 
 ### 6.2 設定檔
 
-- 宿主機 `~/.config/vid-snatch/` 掛到容器 `/app/config`。
+- 宿主機 `~/.config/vid-desk/` 掛到容器 `/app/config`。
 - 內容維持現在的 `output_dir=...` 一行格式，啟動腳本和容器都讀得懂。
 - 容器寫入後，下次啟動腳本讀到新路徑就掛新資料夾。
 
@@ -207,11 +207,11 @@ vid_snatch/
 
 ### 6.5 預建映像檔
 
-- 新增 GitHub Actions workflow：push 到 `main` 時用 buildx 做 **linux/amd64 + linux/arm64** multi-arch 映像檔，推到 `ghcr.io/irene-chou/vid-snatch:latest`，另外以 commit SHA 打 tag。只推 amd64 的話 Apple Silicon 會透過模擬跑 Demucs，慢數倍。
+- 新增 GitHub Actions workflow：push 到 `main` 時用 buildx 做 **linux/amd64 + linux/arm64** multi-arch 映像檔，推到 `ghcr.io/irene-chou/vid-desk:latest`，另外以 commit SHA 打 tag。只推 amd64 的話 Apple Silicon 會透過模擬跑 Demucs，慢數倍。
 - 啟動腳本 pull 後檢查映像檔架構與本機一致（`docker image inspect --format '{{.Architecture}}'`），不一致視同 pull 失敗。
 - GHCR 套件第一次推上去預設是 private，作者已同意在第一次 CI 推送後到 GitHub Packages 手動改成 public。改之前啟動腳本會 pull 失敗並 fallback 到本地 build，功能不受影響。
 - CI 不得把任何 secret 烤進映像檔（build 只用 repo 內容，不傳 build-arg secret）。
-- 啟動腳本流程改為：`docker pull ghcr.io/irene-chou/vid-snatch:latest`，成功就 tag 成本地 `vid-snatch`；pull 失敗（離線、GHCR 掛了）且本地沒有映像檔時才 `docker build`。
+- 啟動腳本流程改為：`docker pull ghcr.io/irene-chou/vid-desk:latest`，成功就 tag 成本地 `vid-desk`；pull 失敗（離線、GHCR 掛了）且本地沒有映像檔時才 `docker build`。
 - 每次啟動都嘗試 pull，等同自動更新；pull 時終端機顯示「正在檢查更新…」。
 
 ## 7. 一併納入的宿主端優化
@@ -221,7 +221,7 @@ vid_snatch/
 1. **Gatekeeper / SmartScreen**：README 加右鍵開啟的步驟截圖；`.command` 第一次執行時對自己與專案資料夾執行 `xattr -dr com.apple.quarantine`（失敗忽略）。
 2. **Docker Desktop 首次啟動**：等待迴圈每 2 秒印一個點；超過 30 秒印「若 Docker Desktop 跳出同意條款視窗，請按 Accept」。
 3. **Windows `.bat` 任何錯誤路徑結尾都 `pause`**，不讓視窗秒關。
-4. **終端機視窗內容**：開完瀏覽器後只顯示「vid-snatch 執行中，操作請看瀏覽器視窗。關閉此視窗即結束。」，不再印 log。macOS 用 `trap EXIT` 做 `docker stop`。
+4. **終端機視窗內容**：開完瀏覽器後只顯示「vid-desk 執行中，操作請看瀏覽器視窗。關閉此視窗即結束。」，不再印 log。macOS 用 `trap EXIT` 做 `docker stop`。
 5. **README 改寫**：以非工程使用者為讀者，步驟化、有截圖；CLI 用法移到最後的「進階」段。
 
 ## 8. 留給 builder 決定的事
@@ -245,5 +245,5 @@ Windows 與 macOS 都有機器可實測，兩個平台都是驗證交付，不�
 - Windows 同上，用 `.bat`。
 - 貼三個網址、選去人聲，三個依序完成。
 - 貼私人影片網址，看到中文錯誤訊息。
-- `docker run --rm -it -v ... vid-snatch "URL" --no-vocals` 仍可用，輸出與現在一致。
+- `docker run --rm -it -v ... vid-desk "URL" --no-vocals` 仍可用，輸出與現在一致。
 - 關閉終端機視窗後，`docker ps` 看不到容器。

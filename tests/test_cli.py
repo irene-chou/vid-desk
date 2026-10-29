@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from vid_snatch.cli import build_parser, main
+from vid_desk.cli import build_parser, main
 
 
 def test_web_flag_makes_url_optional():
@@ -11,7 +11,7 @@ def test_web_flag_makes_url_optional():
 
 
 def test_cli_still_requires_url_without_web(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["vid-snatch"])
+    monkeypatch.setattr(sys, "argv", ["vid-desk"])
     with pytest.raises(SystemExit):
         main()
 
@@ -28,7 +28,7 @@ def test_video_and_no_vocals_are_exclusive():
 ])
 def test_run_three_modes_use_shared_pipeline(monkeypatch, tmp_path, capsys, flags, mode, expected):
     from tests.test_jobs import FakeBackend
-    from vid_snatch import cli
+    from vid_desk import cli
 
     backend = FakeBackend()
     for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
@@ -44,7 +44,7 @@ def test_run_three_modes_use_shared_pipeline(monkeypatch, tmp_path, capsys, flag
 
 def test_run_avoids_overwriting_existing_outputs(monkeypatch, tmp_path):
     from tests.test_jobs import FakeBackend
-    from vid_snatch import cli
+    from vid_desk import cli
 
     backend = FakeBackend()
     for name in ("fetch_title", "download_audio", "convert_audio", "download_video", "separate"):
@@ -59,7 +59,7 @@ def test_run_avoids_overwriting_existing_outputs(monkeypatch, tmp_path):
 def test_run_web_reads_env_and_defaults_host_output_dir(monkeypatch, tmp_path):
     import uvicorn
 
-    from vid_snatch import webserver
+    from vid_desk import webserver
 
     out = tmp_path / "out"
     cfg = tmp_path / "cfg"
@@ -87,7 +87,7 @@ def test_run_web_reads_env_and_defaults_host_output_dir(monkeypatch, tmp_path):
 def _capture_server_host(monkeypatch, tmp_path):
     import uvicorn
 
-    from vid_snatch import webserver
+    from vid_desk import webserver
 
     captured = {}
     orig_init = uvicorn.Server.__init__

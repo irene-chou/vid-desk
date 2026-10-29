@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vid-snatch</title>
+<title>vid-desk</title>
 <script>
 // ===== 主題（#26 / #37）：在第一次繪製前就套好 data-theme，開頁不閃色 =====
 // 純函式區塊由 tests/theme.test.mjs 以 node 直接測；下面主程式也沿用這幾個函式
 // @@theme-begin
-const THEME_KEY = "vid-snatch.theme";
+const THEME_KEY = "vid-desk.theme";
 const THEMES = ["system", "light", "dark"];
 
 // 存值不在清單內（包含 null）一律當「跟隨系統」；#26 存過的 "system" 也視為跟隨系統（#37 之後只會存 light / dark）
@@ -293,16 +293,16 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
 
 <div class="app">
   <header class="hdr">
-    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-snatch</h1><span class="ver" id="version" hidden></span></div>
+    <div class="brand"><span class="logo"><svg class="ic"><use href="#i-dl"/></svg></span><h1>vid-desk</h1><span class="ver" id="version" hidden></span></div>
     <div class="actions">
-      <a id="github-link" class="ibtn" href="https://github.com/irene-chou/vid-snatch" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg class="ic"><use href="#i-github"/></svg></a>
+      <a id="github-link" class="ibtn" href="https://github.com/irene-chou/vid-desk" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg class="ic"><use href="#i-github"/></svg></a>
       <a id="kofi-link" class="ibtn" href="https://ko-fi.com/zephyrinn" target="_blank" rel="noopener" aria-label="請我喝杯咖啡" title="請我喝杯咖啡"><svg class="ic"><use href="#i-coffee"/></svg></a>
       <button id="theme-toggle" class="ibtn" type="button" aria-label="切換主題" title="切換主題"><svg class="ic"><use id="theme-icon" href="#i-moon"/></svg></button>
       <button id="settings-toggle" class="ibtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" aria-label="設定" title="設定"><svg class="ic"><use href="#i-gear"/></svg></button>
     </div>
   </header>
 
-  <div id="update-failed" class="banner" role="status" hidden><svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-snatch 再試。</span></div>
+  <div id="update-failed" class="banner" role="status" hidden><svg class="ic"><use href="#i-alert"/></svg><span>YouTube 可能改版了，自動修復沒有成功。請稍後關閉並重新開啟 vid-desk 再試。</span></div>
 
   <section class="panel" id="input" aria-label="新工作">
     <div class="field">
@@ -388,7 +388,7 @@ applyTheme(document.documentElement, readTheme(() => localStorage));
   <div id="folder-notice" class="notice" hidden>已更新，下次啟動生效</div>
   <div class="row">
     <button id="pick-folder" type="button">更換資料夾</button>
-    <button id="shutdown" type="button">結束 vid-snatch</button>
+    <button id="shutdown" type="button">結束 vid-desk</button>
   </div>
   <details>
     <summary>進階<svg class="ic chev"><use href="#i-chev"/></svg></summary>
@@ -555,7 +555,7 @@ function isUpdateFailed(job) {
   return job.state === "failed" && job.error_kind === "update_failed";
 }
 
-// 頁面層級橫幅（#31）：頁面上還有這類失敗的工作、且在它之後沒有任何工作成功過，就提示使用者稍後重開 vid-snatch。
+// 頁面層級橫幅（#31）：頁面上還有這類失敗的工作、且在它之後沒有任何工作成功過，就提示使用者稍後重開 vid-desk。
 // 之後有工作成功（例如重試成功）代表問題已解，橫幅收起；「清除已完成」把這類卡片移掉也會收起
 function showsUpdateFailedBanner(jobs) {
   const failed = jobs.filter(isUpdateFailed);
@@ -644,13 +644,13 @@ async function getJson(path) {
   return res.json();
 }
 
-// POST / DELETE 都要帶 X-Vid-Snatch 防 CSRF
+// POST / DELETE 都要帶 X-Vid-Desk 防 CSRF
 async function sendJson(method, path, body) {
   let res;
   try {
     res = await fetch(path, {
       method,
-      headers: { "Content-Type": "application/json", "X-Vid-Snatch": "1" },
+      headers: { "Content-Type": "application/json", "X-Vid-Desk": "1" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (e) {
@@ -1275,7 +1275,7 @@ async function pickFolder() {
 function showEnded() {
   const box = document.createElement("div");
   box.className = "ended";
-  box.textContent = "vid-snatch 已結束，可以關閉此分頁";
+  box.textContent = "vid-desk 已結束，可以關閉此分頁";
   document.body.replaceChildren(box);
 }
 
